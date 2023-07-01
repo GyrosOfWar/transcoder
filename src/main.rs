@@ -1,88 +1,75 @@
+use std::collections::HashMap;
+
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use database::VideoFile;
 use ffprobe::ffprobe;
+use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::database::Database;
 
+mod collect;
 mod database;
 mod ffprobe;
+mod transcode;
 
 pub type Result<T> = std::result::Result<T, color_eyre::Report>;
 
-const EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"];
-
-fn is_excluded(e: &DirEntry, exclude: &[String]) -> bool {
-    let path = Utf8Path::from_path(e.path()).expect("path must be utf-8");
-    let is_excluded = exclude.iter().any(|p| path.as_str().contains(p));
-    debug!("{} is excluded: {}", path, is_excluded);
-    is_excluded
-}
-
-pub fn gather_files(
-    base_path: impl AsRef<Utf8Path>,
-    exclude: Vec<String>,
-) -> Result<Vec<Utf8PathBuf>> {
-    info!("gathering files at {}", base_path.as_ref());
-    let mut files = vec![];
-    let path = base_path.as_ref().as_std_path();
-    let walker = WalkDir::new(path).into_iter();
-    for entry in walker.filter_entry(|e| !is_excluded(e, &exclude)) {
-        let entry = entry?;
-        if entry.file_type().is_file() {
-            let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
-            if let Some(ext) = path.extension() {
-                if EXTENSIONS.contains(&ext) {
-                    info!("found video file: {path}");
-                    files.push(path.to_owned())
-                }
-            }
-        }
-    }
-    Ok(files)
-}
-
-pub fn probe_files(files: Vec<Utf8PathBuf>) -> Vec<VideoFile> {
-    files
-        .into_par_iter()
-        .flat_map(|f| {
-            let result = ffprobe(&f).ok()?;
-            let size = result
-                .format
-                .size
-                .as_ref()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_default();
-            Some(VideoFile {
-                rowid: None,
-                path: f.to_owned(),
-                duration: result.duration().unwrap_or_default(),
-                resolution: result.resolution(),
-                bitrate: result.bitrate(),
-                frame_rate: result.frame_rate(),
-                codec: result.video_codec().to_owned(),
-                file_size: size,
-            })
-        })
-        .collect()
-}
-
 #[derive(Parser, Debug)]
 pub struct Args {
+    /// Exclude files that contain this string
     #[clap(short, long)]
     pub exclude: Vec<String>,
+
+    /// CRF value to use for encoding
+    #[clap(short, long, default_value = "23")]
+    pub crf: u8,
+
+    /// Effort level to use for encoding
+    #[clap(short, long, default_value = "4")]
+    pub effort: u8,
+
+    /// Codecs to transcode
+    #[clap(short, long, default_value = "h264")]
+    pub codecs: Vec<String>,
+
+    /// Verbose output
+    #[clap(short, long)]
+    pub verbose: bool,
+
+    /// The path to scan for video files
     pub path: Utf8PathBuf,
 }
 
-fn main() -> Result<()> {
-    use std::env;
+fn print_stats(files: &[VideoFile]) {
+    let total_size: u64 = files.iter().map(|f| f.file_size).sum();
+    let total_files = files.len();
 
-    if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "debug");
+    println!("Total files: {}", total_files);
+    println!("Total size: {}", total_size);
+
+    let codec_distribution =
+        files
+            .iter()
+            .map(|f| f.codec.as_str())
+            .fold(HashMap::new(), |mut acc, codec| {
+                *acc.entry(codec).or_insert(0) += 1;
+                acc
+            });
+    println!("File counts by codec:");
+    for (codec, count) in codec_distribution {
+        println!("{}: {}", codec, count);
     }
+}
+
+fn main() -> Result<()> {
+    // use std::env;
+    // if env::var("RUST_LOG").is_err() {
+    //     env::set_var("RUST_LOG", "debug");
+    // }
 
     tracing_subscriber::fmt::init();
     color_eyre::install()?;
@@ -91,9 +78,11 @@ fn main() -> Result<()> {
     let database = Database::new()?;
     database.create_tables()?;
 
-    let files = gather_files(&args.path, args.exclude)?;
-    let files = probe_files(files);
-    dbg!(files);
+    let files = collect::gather_files(&args.path, args.exclude)?;
+    let files = collect::probe_files(files);
+    if args.verbose {
+        print_stats(&files);
+    }
 
     Ok(())
 }
