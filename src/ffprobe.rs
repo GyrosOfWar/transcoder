@@ -2,7 +2,7 @@ use std::process::{Command, Output};
 
 use camino::Utf8Path;
 use serde::Deserialize;
-use tracing::info;
+use tracing::instrument;
 
 use crate::Result;
 
@@ -217,8 +217,9 @@ pub fn commandline_error<T>(command_name: &str, output: Output) -> crate::Result
     ))
 }
 
+#[instrument(skip(path))]
 pub fn ffprobe(path: impl AsRef<Utf8Path>) -> Result<FfProbe> {
-    info!("ffprobe {}", path.as_ref());
+    // info!("ffprobe {}", path.as_ref());
     let args = &[
         "-v",
         "error",

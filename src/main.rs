@@ -6,8 +6,11 @@ use database::VideoFile;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
+use crate::collect::Collector;
 use crate::database::Database;
+use crate::transcode::Transcoder;
 
 mod collect;
 mod database;
@@ -23,11 +26,11 @@ pub struct Args {
     pub exclude: Vec<String>,
 
     /// CRF value to use for encoding
-    #[clap(short, long, default_value = "23")]
+    #[clap(short, long, default_value = "35")]
     pub crf: u8,
 
     /// Effort level to use for encoding
-    #[clap(short, long, default_value = "4")]
+    #[clap(short, long, default_value = "6")]
     pub effort: u8,
 
     /// Codecs to transcode
@@ -65,6 +68,7 @@ fn print_stats(files: &[VideoFile]) {
 
 fn main() -> Result<()> {
     use std::env;
+
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "info");
     }
@@ -73,6 +77,7 @@ fn main() -> Result<()> {
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(EnvFilter::from_default_env())
         .with(indicatif_layer)
         .init();
     color_eyre::install()?;
@@ -80,15 +85,17 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let database = Database::new()?;
     database.create_tables()?;
+    let collector = Collector::new(database.clone(), args.path.clone(), args.exclude.clone());
+    let files = collector.gather_files()?;
+    let files = collector.probe_files(files)?;
 
-    let files = collect::gather_files(&args.path, args.exclude.clone())?;
-    let files = collect::probe_files(files);
     if args.verbose {
         print_stats(&files);
     }
 
     let transcode_options = args.into();
-    transcode::transcode_all(files, transcode_options)?;
+    let transcoder = Transcoder::new(database);
+    transcoder.transcode_all(files, transcode_options)?;
 
     Ok(())
 }
