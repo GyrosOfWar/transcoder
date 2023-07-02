@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 use clap::Parser;
 use database::VideoFile;
-use ffprobe::ffprobe;
-use indicatif::ParallelProgressIterator;
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use tracing::{debug, info};
-use walkdir::{DirEntry, WalkDir};
+use tracing_indicatif::IndicatifLayer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::database::Database;
 
@@ -66,23 +64,31 @@ fn print_stats(files: &[VideoFile]) {
 }
 
 fn main() -> Result<()> {
-    // use std::env;
-    // if env::var("RUST_LOG").is_err() {
-    //     env::set_var("RUST_LOG", "debug");
-    // }
+    use std::env;
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info");
+    }
 
-    tracing_subscriber::fmt::init();
+    let indicatif_layer = IndicatifLayer::new();
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(indicatif_layer)
+        .init();
     color_eyre::install()?;
 
     let args = Args::parse();
     let database = Database::new()?;
     database.create_tables()?;
 
-    let files = collect::gather_files(&args.path, args.exclude)?;
+    let files = collect::gather_files(&args.path, args.exclude.clone())?;
     let files = collect::probe_files(files);
     if args.verbose {
         print_stats(&files);
     }
+
+    let transcode_options = args.into();
+    transcode::transcode_all(files, transcode_options)?;
 
     Ok(())
 }
