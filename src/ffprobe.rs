@@ -179,6 +179,7 @@ pub struct Format {
 }
 
 impl Format {
+    #[allow(dead_code)]
     pub fn duration(&self) -> Option<f64> {
         self.duration
             .as_ref()

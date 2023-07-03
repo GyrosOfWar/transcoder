@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use tracing::{info, instrument, warn};
 
-use crate::database::{Database, VideoConversion, VideoFile};
+use crate::collect::VideoFile;
 use crate::ffprobe::commandline_error;
 use crate::{Args, Result};
 
@@ -66,13 +66,11 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
     }
 }
 
-pub struct Transcoder {
-    db: Database,
-}
+pub struct Transcoder {}
 
 impl Transcoder {
-    pub fn new(db: Database) -> Self {
-        Self { db }
+    pub fn new() -> Self {
+        Self {}
     }
 
     pub fn transcode_all(&self, files: Vec<VideoFile>, options: TranscodeOptions) -> Result<()> {
@@ -86,13 +84,7 @@ impl Transcoder {
         for file in filtered_files.into_iter() {
             match transcode_file(&file, &options) {
                 Ok(_) => {
-                    self.db.add_video_conversion(VideoConversion {
-                        video_file_id: file.rowid.expect("file must have rowid set"),
-                        original_codec: file.codec,
-                        new_codec: "av1".to_string(),
-                        created_at: None,
-                        updated_at: None,
-                    })?;
+                    info!("transcoded file {} successfully", file.path);
                 }
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);

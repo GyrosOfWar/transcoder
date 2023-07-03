@@ -2,18 +2,16 @@ use std::collections::HashMap;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
-use database::VideoFile;
+use collect::VideoFile;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::collect::Collector;
-use crate::database::Database;
 use crate::transcode::Transcoder;
 
 mod collect;
-mod database;
 mod ffprobe;
 mod transcode;
 
@@ -83,9 +81,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Args::parse();
-    let database = Database::new()?;
-    database.create_tables()?;
-    let collector = Collector::new(database.clone(), args.path.clone(), args.exclude.clone());
+    let collector = Collector::new(args.path.clone(), args.exclude.clone());
     let files = collector.gather_files()?;
     let files = collector.probe_files(files)?;
 
@@ -94,7 +90,7 @@ fn main() -> Result<()> {
     }
 
     let transcode_options = args.into();
-    let transcoder = Transcoder::new(database);
+    let transcoder = Transcoder::new();
     transcoder.transcode_all(files, transcode_options)?;
 
     Ok(())
