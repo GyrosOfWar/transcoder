@@ -2,7 +2,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use human_repr::HumanCount;
-use tracing::{info, instrument, warn};
+use tracing::{info, warn};
 
 use crate::collect::VideoFile;
 use crate::ffprobe::commandline_error;
@@ -96,9 +96,7 @@ impl Transcoder {
 
         for file in filtered_files.into_iter() {
             match transcode_file(&file, &options) {
-                Ok(_) => {
-     
-                }
+                Ok(_) => {}
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);
                 }

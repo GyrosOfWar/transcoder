@@ -2,7 +2,6 @@ use std::process::{Command, Output};
 
 use camino::Utf8Path;
 use serde::Deserialize;
-use tracing::instrument;
 
 use crate::Result;
 
