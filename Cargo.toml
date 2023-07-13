@@ -7,6 +7,7 @@ edition = "2021"
 camino = "1.1.4"
 clap = { version = "4.3.10", features = ["derive"] }
 color-eyre = "0.6.2"
+human-repr = "1.1.0"
 indicatif = { version = "0.17.5", features = ["rayon"] }
 parking_lot = "0.12.1"
 rayon = "1.7.0"

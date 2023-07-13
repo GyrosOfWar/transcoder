@@ -24,11 +24,11 @@ pub struct Args {
     pub exclude: Vec<String>,
 
     /// CRF value to use for encoding
-    #[clap(short, long, default_value = "35")]
+    #[clap(short, long, default_value = "24")]
     pub crf: u8,
 
     /// Effort level to use for encoding
-    #[clap(short, long, default_value = "6")]
+    #[clap(short, long, default_value = "7")]
     pub effort: u8,
 
     /// Codecs to transcode
@@ -38,6 +38,10 @@ pub struct Args {
     /// Verbose output
     #[clap(short, long)]
     pub verbose: bool,
+
+    /// Dry run, don't do anything
+    #[clap(short, long)]
+    pub dry_run: bool,
 
     /// The path to scan for video files
     pub path: Utf8PathBuf,

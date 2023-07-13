@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::time::Instant;
 
+use human_repr::HumanCount;
 use tracing::{info, instrument, warn};
 
 use crate::collect::VideoFile;
@@ -12,6 +13,7 @@ pub struct TranscodeOptions {
     pub crf: u8,
     pub effort: u8,
     pub codecs: Vec<String>,
+    pub dry_run: bool,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -20,12 +22,22 @@ impl From<Args> for TranscodeOptions {
             crf: args.crf,
             effort: args.effort,
             codecs: args.codecs,
+            dry_run: args.dry_run,
         }
     }
 }
 
-#[instrument]
+// #[instrument]
 fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
+    if options.dry_run {
+        info!(
+            "Would transcode file {} with size {}",
+            file.path.as_str(),
+            file.file_size.human_count_bytes()
+        );
+        return Ok(());
+    }
+
     let start = Instant::now();
     let stem = file.path.file_stem().expect("file must have a name");
     let out_path = file.path.with_file_name(format!("{}_av1.mp4", stem));
@@ -39,10 +51,6 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
             file.path.as_str(),
             "-c:v",
             "libsvtav1",
-            "-svtav1-params",
-            "mbr=3000k",
-            "-g",
-            "240",
             "-preset",
             &options.effort.to_string(),
             "-crf",
@@ -54,11 +62,16 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
         .output()?;
     if output.status.success() {
         let elapsed = start.elapsed();
+        let new_size = out_path.metadata()?.len();
         info!(
-            "Transcoded file {} with duration {}s in {}s",
-            file.path.as_str(),
+            "Transcoded file {} with duration {}s and resolution {}x{} in {}s. Initial size: {}, new size: {}",
+            file.path.file_name().unwrap(),
             file.duration,
-            elapsed.as_secs_f32()
+            file.resolution.0,
+            file.resolution.1,
+            elapsed.as_secs_f32(),
+            file.file_size.human_count_bytes(),
+            new_size.human_count_bytes()
         );
         Ok(())
     } else {
@@ -84,7 +97,7 @@ impl Transcoder {
         for file in filtered_files.into_iter() {
             match transcode_file(&file, &options) {
                 Ok(_) => {
-                    info!("transcoded file {} successfully", file.path);
+     
                 }
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);
