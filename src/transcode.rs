@@ -1,14 +1,19 @@
 use std::io::{BufRead, BufReader};
-use std::process::{ChildStderr, Command};
+use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use color_eyre::eyre::bail;
 use human_repr::HumanCount;
+use indicatif::{ProgressBar, ProgressStyle};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use tracing::{info, warn};
 
 use crate::collect::VideoFile;
 use crate::ffprobe::commandline_error;
 use crate::{Args, Result};
+
+static FRAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"frame=(\d+)").unwrap());
 
 #[derive(Debug, Clone)]
 pub struct TranscodeOptions {
@@ -78,16 +83,36 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
     }
 
     let start = Instant::now();
-    let process: std::process::Child = Command::new("ffmpeg").args(args).spawn()?;
-    if let Some(stdout) = process.stdout {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            let line = line?;
+    let mut process = Command::new("ffmpeg")
+        .args(args)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.take().unwrap();
+    let reader = BufReader::new(stdout);
+
+    let progress = ProgressBar::new((file.duration * file.frame_rate) as u64).with_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:65.cyan/blue} {pos:>7}/{len:7} {eta}",
+        )
+        .unwrap(),
+    );
+    progress.println(format!(
+        "Transcoding file '{}'.",
+        file.path.file_name().unwrap()
+    ));
+    for line in reader.lines() {
+        let line = line?;
+        if let Some(captures) = FRAME_REGEX.captures(&line) {
+            let frame = captures.get(1).unwrap().as_str().parse::<u64>()?;
+            progress.set_position(frame);
         }
     }
-    let status = process.wait()?;
+    progress.finish_and_clear();
 
-    if status.success() {
+    let output = process.wait_with_output()?;
+    if output.status.success() {
         let elapsed = start.elapsed();
         let new_size = out_path.metadata()?.len();
         Ok(())
