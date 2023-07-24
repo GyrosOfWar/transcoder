@@ -42,6 +42,10 @@ impl Collector {
 
     pub fn gather_files(&self) -> Result<Vec<Utf8PathBuf>> {
         info!("gathering files at {}", self.base_path);
+        if self.base_path.is_file() {
+            info!("path argument is a file, not a directory, returning it");
+            return Ok(vec![self.base_path.clone()]);
+        }
         let mut files = vec![];
         let walker = WalkDir::new(&self.base_path).into_iter();
         for entry in walker.filter_entry(|e| !self.is_excluded(e)) {
