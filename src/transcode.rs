@@ -29,37 +29,39 @@ impl From<Args> for TranscodeOptions {
 
 // #[instrument]
 fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
-    if options.dry_run {
-        info!(
-            "Would transcode file {} with size {}",
-            file.path.as_str(),
-            file.file_size.human_count_bytes()
-        );
-        return Ok(());
-    }
-
-    let start = Instant::now();
     let stem = file.path.file_stem().expect("file must have a name");
     let out_path = file.path.with_file_name(format!("{}_av1.mp4", stem));
     if out_path.is_file() {
         info!("File {} already exists, skipping", out_path.as_str());
         return Ok(());
     }
-    let output = Command::new("ffmpeg")
-        .args(vec![
-            "-i",
+    let effort = options.effort.to_string();
+    let crf = options.crf.to_string();
+    let args = vec![
+        "-i",
+        file.path.as_str(),
+        "-c:v",
+        "libsvtav1",
+        "-preset",
+        &effort,
+        "-crf",
+        &crf,
+        "-c:a",
+        "copy",
+        out_path.as_str(),
+    ];
+    if options.dry_run {
+        info!(
+            "Would transcode file {} with size {} and command 'ffmpeg {}'",
             file.path.as_str(),
-            "-c:v",
-            "libsvtav1",
-            "-preset",
-            &options.effort.to_string(),
-            "-crf",
-            &options.crf.to_string(),
-            "-c:a",
-            "copy",
-            out_path.as_str(),
-        ])
-        .output()?;
+            file.file_size.human_count_bytes(),
+            args.join(" ")
+        );
+        return Ok(());
+    }
+
+    let start = Instant::now();
+    let output = Command::new("ffmpeg").args(args).output()?;
     if output.status.success() {
         let elapsed = start.elapsed();
         let new_size = out_path.metadata()?.len();
