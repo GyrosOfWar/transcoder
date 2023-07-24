@@ -26,11 +26,16 @@ const EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", 
 pub struct Collector {
     exclude: Vec<String>,
     base_path: Utf8PathBuf,
+    min_size: Option<u64>,
 }
 
 impl Collector {
-    pub fn new(base_path: Utf8PathBuf, exclude: Vec<String>) -> Self {
-        Self { exclude, base_path }
+    pub fn new(base_path: Utf8PathBuf, exclude: Vec<String>, min_size: Option<u64>) -> Self {
+        Self {
+            exclude,
+            base_path,
+            min_size,
+        }
     }
 
     fn is_excluded(&self, e: &DirEntry) -> bool {
@@ -54,6 +59,13 @@ impl Collector {
                 let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
                 if let Some(ext) = path.extension() {
                     if EXTENSIONS.contains(&ext) {
+                        if let Some(min_size) = self.min_size {
+                            let size = entry.metadata()?.len();
+                            if size < min_size {
+                                debug!("skipping file {} because it is too small", path);
+                                continue;
+                            }
+                        }
                         info!("found video file: {path}");
                         files.push(path.to_owned())
                     }

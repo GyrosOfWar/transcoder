@@ -43,8 +43,31 @@ pub struct Args {
     #[clap(short, long)]
     pub dry_run: bool,
 
+    /// Minimum file size to transcode
+    #[clap(long)]
+    pub min_size: Option<String>,
+
     /// The path to scan for video files
     pub path: Utf8PathBuf,
+}
+
+impl Args {
+    pub fn min_size(&self) -> Option<u64> {
+        self.min_size.as_ref().and_then(|s| parse_bytes(&s))
+    }
+}
+
+fn parse_bytes(string: &str) -> Option<u64> {
+    let mut value = string.trim().to_string();
+    let suffix = value.split_off(value.len() - 1);
+    let value = value.parse::<u64>().ok()?;
+    let multiplier = match suffix.to_lowercase().as_str() {
+        "k" => 1024,
+        "m" => 1024 * 1024,
+        "g" => 1024 * 1024 * 1024,
+        _ => 1,
+    };
+    Some(value * multiplier)
 }
 
 fn print_stats(files: &[VideoFile]) {
@@ -72,7 +95,7 @@ fn main() -> Result<()> {
     use std::env;
 
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "off");
+        env::set_var("RUST_LOG", "info");
     }
 
     let indicatif_layer = IndicatifLayer::new();
@@ -85,7 +108,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Args::parse();
-    let collector = Collector::new(args.path.clone(), args.exclude.clone());
+    let collector = Collector::new(args.path.clone(), args.exclude.clone(), args.min_size());
     let files = collector.gather_files()?;
     let files = collector.probe_files(files)?;
 

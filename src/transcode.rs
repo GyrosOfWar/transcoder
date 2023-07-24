@@ -1,8 +1,7 @@
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::time::Instant;
 
-use color_eyre::eyre::bail;
 use human_repr::HumanCount;
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
@@ -37,11 +36,12 @@ impl From<Args> for TranscodeOptions {
 // #[instrument]
 fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
     let stem = file.path.file_stem().expect("file must have a name");
-    let out_path = file.path.with_file_name(format!("{}_av1.mp4", stem));
-    if out_path.is_file() {
-        info!("File {} already exists, skipping", out_path.as_str());
+    let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
+    if out_file.is_file() {
+        info!("File {} already exists, skipping", out_file.as_str());
         return Ok(());
     }
+    let tmp_file = file.path.with_file_name(format!("{stem}_tmp.mp4"));
     let effort = options.effort.to_string();
     let crf = options.crf.to_string();
     let args = vec![
@@ -58,7 +58,7 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
         "-progress",
         "-",
         "-nostats",
-        out_path.as_str(),
+        tmp_file.as_str(),
     ];
     if options.dry_run {
         let args: Vec<_> = args
@@ -82,7 +82,6 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
         return Ok(());
     }
 
-    let start = Instant::now();
     let mut process = Command::new("ffmpeg")
         .args(args)
         .stderr(Stdio::piped())
@@ -113,11 +112,10 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
 
     let output = process.wait_with_output()?;
     if output.status.success() {
-        let elapsed = start.elapsed();
-        let new_size = out_path.metadata()?.len();
+        fs::rename(tmp_file, out_file)?;
         Ok(())
     } else {
-        bail!("ffmpeg failed");
+        commandline_error("ffmpeg", output)
     }
 }
 
