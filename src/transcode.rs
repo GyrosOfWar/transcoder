@@ -1,6 +1,8 @@
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{ChildStderr, Command};
 use std::time::Instant;
 
+use color_eyre::eyre::bail;
 use human_repr::HumanCount;
 use tracing::{info, warn};
 
@@ -48,36 +50,49 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
         &crf,
         "-c:a",
         "copy",
+        "-progress",
+        "-",
+        "-nostats",
         out_path.as_str(),
     ];
     if options.dry_run {
+        let args: Vec<_> = args
+            .iter()
+            .map(|s| {
+                if s.contains(" ") {
+                    format!("\"{}\"", s)
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect();
+        let args = args.join(" ");
+
         info!(
             "Would transcode file {} with size {} and command 'ffmpeg {}'",
             file.path.as_str(),
             file.file_size.human_count_bytes(),
-            args.join(" ")
+            args
         );
         return Ok(());
     }
 
     let start = Instant::now();
-    let output = Command::new("ffmpeg").args(args).output()?;
-    if output.status.success() {
+    let process: std::process::Child = Command::new("ffmpeg").args(args).spawn()?;
+    if let Some(stdout) = process.stdout {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = line?;
+        }
+    }
+    let status = process.wait()?;
+
+    if status.success() {
         let elapsed = start.elapsed();
         let new_size = out_path.metadata()?.len();
-        info!(
-            "Transcoded file {} with duration {}s and resolution {}x{} in {}s. Initial size: {}, new size: {}",
-            file.path.file_name().unwrap(),
-            file.duration,
-            file.resolution.0,
-            file.resolution.1,
-            elapsed.as_secs_f32(),
-            file.file_size.human_count_bytes(),
-            new_size.human_count_bytes()
-        );
         Ok(())
     } else {
-        commandline_error("ffmpeg", output)
+        bail!("ffmpeg failed");
     }
 }
 
