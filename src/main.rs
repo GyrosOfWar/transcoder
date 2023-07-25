@@ -46,6 +46,9 @@ pub struct Args {
     #[clap(long)]
     pub min_size: Option<String>,
 
+    #[clap(short, long)]
+    pub log: Option<tracing::level_filters::LevelFilter>,
+
     /// The path to scan for video files
     pub path: Utf8PathBuf,
 }
@@ -93,16 +96,18 @@ fn print_stats(files: &[VideoFile]) {
 fn main() -> Result<()> {
     use std::env;
 
-    if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "off");
+    let args = Args::parse();
+
+    if let Some(level) = args.log {
+        env::set_var("RUST_LOG", level.to_string());
     }
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
     color_eyre::install()?;
 
-    let args = Args::parse();
     let collector = Collector::new(args.path.clone(), args.exclude.clone(), args.min_size());
     let files = collector.gather_files()?;
     let files = collector.probe_files(files)?;

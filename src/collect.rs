@@ -10,6 +10,7 @@ use crate::Result;
 pub struct VideoFile {
     pub rowid: Option<i64>,
     pub path: Utf8PathBuf,
+    /// Duration in seconds.
     pub duration: f64,
     pub resolution: (u32, u32),
     pub bitrate: u64,

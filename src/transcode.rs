@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use console::Term;
 use human_repr::HumanCount;
@@ -13,7 +14,7 @@ use crate::collect::VideoFile;
 use crate::ffprobe::commandline_error;
 use crate::{Args, Result};
 
-static FRAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"frame=(\d+)").unwrap());
+static OUT_TIME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"out_time_us=(\d+)").unwrap());
 
 #[derive(Debug, Clone)]
 pub struct TranscodeOptions {
@@ -54,7 +55,6 @@ fn transcode_file(
     let crf = options.crf.to_string();
     let args = vec![
         "-i",
-        "-y",
         file.path.as_str(),
         "-c:v",
         "libsvtav1",
@@ -100,7 +100,7 @@ fn transcode_file(
     let stdout = process.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
 
-    let progress = ProgressBar::new((file.duration * file.frame_rate) as u64).with_style(
+    let progress = ProgressBar::new((file.duration * 1000.0) as u64).with_style(
         ProgressStyle::with_template(
             "[{elapsed_precise}] {wide_bar:.cyan/blue} {pos:>7}/{len:7} {eta}",
         )
@@ -114,9 +114,10 @@ fn transcode_file(
     ));
     for line in reader.lines() {
         let line = line?;
-        if let Some(captures) = FRAME_REGEX.captures(&line) {
-            let frame = captures.get(1).unwrap().as_str().parse::<u64>()?;
-            progress.set_position(frame);
+        if let Some(captures) = OUT_TIME_REGEX.captures(&line) {
+            let duration: u64 = captures.get(1).unwrap().as_str().parse::<u64>()?;
+            let duration = Duration::from_micros(duration);
+            progress.set_position(duration.as_millis() as u64);
         }
     }
     progress.finish();
