@@ -1,11 +1,11 @@
-use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use std::{fmt, fs};
 
 use console::Term;
 use human_repr::HumanCount;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{FormattedDuration, ProgressBar, ProgressState, ProgressStyle};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::{info, warn};
@@ -102,9 +102,31 @@ fn transcode_file(
 
     let progress = ProgressBar::new((file.duration * 1000.0) as u64).with_style(
         ProgressStyle::with_template(
-            "[{elapsed_precise}] {wide_bar:.cyan/blue} {pos:>7}/{len:7} {eta}",
+            "{wide_bar:.cyan/blue} Trancoded {pos_duration} / {len_duration}, ETA: {eta}",
         )
-        .unwrap(),
+        .unwrap()
+        .with_key(
+            "pos_duration",
+            |state: &ProgressState, w: &mut dyn fmt::Write| {
+                write!(
+                    w,
+                    "{}",
+                    FormattedDuration(Duration::from_millis(state.pos()))
+                )
+                .unwrap()
+            },
+        )
+        .with_key(
+            "len_duration",
+            |state: &ProgressState, w: &mut dyn fmt::Write| {
+                write!(
+                    w,
+                    "{}",
+                    FormattedDuration(Duration::from_millis(state.len().unwrap()))
+                )
+                .unwrap()
+            },
+        ),
     );
     progress.println(format!(
         "Transcoding file '{}' ({} / {})",
