@@ -33,8 +33,12 @@ impl From<Args> for TranscodeOptions {
     }
 }
 
-// #[instrument]
-fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
+fn transcode_file(
+    file: &VideoFile,
+    options: &TranscodeOptions,
+    index: usize,
+    len: usize,
+) -> Result<()> {
     let stem = file.path.file_stem().expect("file must have a name");
     let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
     if out_file.is_file() {
@@ -98,8 +102,10 @@ fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
         .unwrap(),
     );
     progress.println(format!(
-        "Transcoding file '{}'.",
-        file.path.file_name().unwrap()
+        "Transcoding file '{}' ({} / {})",
+        file.path.file_name().unwrap(),
+        index + 1,
+        len
     ));
     for line in reader.lines() {
         let line = line?;
@@ -131,11 +137,11 @@ impl Transcoder {
             .into_iter()
             .filter(|f| options.codecs.contains(&f.codec))
             .collect();
-        let len = filtered_files.len() as u64;
+        let len = filtered_files.len();
         info!("transcoding {len} files (codecs {:?})", options.codecs);
 
-        for file in filtered_files.into_iter() {
-            match transcode_file(&file, &options) {
+        for (index, file) in filtered_files.into_iter().enumerate() {
+            match transcode_file(&file, &options, index, len) {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);

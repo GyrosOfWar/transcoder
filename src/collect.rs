@@ -61,7 +61,7 @@ impl Collector {
                     if EXTENSIONS.contains(&ext) {
                         if let Some(min_size) = self.min_size {
                             let size = entry.metadata()?.len();
-                            if size < min_size {
+                            if size <= min_size {
                                 debug!("skipping file {} because it is too small", path);
                                 continue;
                             }

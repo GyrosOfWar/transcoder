@@ -95,7 +95,7 @@ fn main() -> Result<()> {
     use std::env;
 
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "info");
+        env::set_var("RUST_LOG", "off");
     }
 
     let indicatif_layer = IndicatifLayer::new();
