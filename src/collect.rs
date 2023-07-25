@@ -1,5 +1,4 @@
 use camino::{Utf8Path, Utf8PathBuf};
-use indicatif::ParallelProgressIterator;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info};
 use walkdir::{DirEntry, WalkDir};
@@ -57,8 +56,8 @@ impl Collector {
             let entry = entry?;
             if entry.file_type().is_file() {
                 let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
-                if let Some(ext) = path.extension() {
-                    if EXTENSIONS.contains(&ext) {
+                if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
+                    if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
                         if let Some(min_size) = self.min_size {
                             let size = entry.metadata()?.len();
                             if size <= min_size {
@@ -76,10 +75,8 @@ impl Collector {
     }
 
     pub fn probe_files(&self, files: Vec<Utf8PathBuf>) -> Result<Vec<VideoFile>> {
-        let len = files.len() as u64;
         let results: Result<Vec<_>> = files
             .into_par_iter()
-            .progress_count(len)
             .map(|f| {
                 let result = ffprobe(&f);
                 result.map(|result| {

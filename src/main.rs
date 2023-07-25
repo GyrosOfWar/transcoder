@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use camino::Utf8PathBuf;
 use clap::Parser;
 use collect::VideoFile;
-use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -97,13 +96,9 @@ fn main() -> Result<()> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "off");
     }
-
-    let indicatif_layer = IndicatifLayer::new();
-
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
+        .with(tracing_subscriber::fmt::layer())
         .with(EnvFilter::from_default_env())
-        .with(indicatif_layer)
         .init();
     color_eyre::install()?;
 

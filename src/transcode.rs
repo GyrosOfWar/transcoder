@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
+use console::Term;
 use human_repr::HumanCount;
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
@@ -39,6 +40,9 @@ fn transcode_file(
     index: usize,
     len: usize,
 ) -> Result<()> {
+    let term = Term::stdout();
+    term.clear_screen()?;
+
     let stem = file.path.file_stem().expect("file must have a name");
     let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
     if out_file.is_file() {
@@ -50,6 +54,7 @@ fn transcode_file(
     let crf = options.crf.to_string();
     let args = vec![
         "-i",
+        "-y",
         file.path.as_str(),
         "-c:v",
         "libsvtav1",
@@ -97,7 +102,7 @@ fn transcode_file(
 
     let progress = ProgressBar::new((file.duration * file.frame_rate) as u64).with_style(
         ProgressStyle::with_template(
-            "[{elapsed_precise}] {bar:65.cyan/blue} {pos:>7}/{len:7} {eta}",
+            "[{elapsed_precise}] {wide_bar:.cyan/blue} {pos:>7}/{len:7} {eta}",
         )
         .unwrap(),
     );
@@ -114,7 +119,7 @@ fn transcode_file(
             progress.set_position(frame);
         }
     }
-    progress.finish_and_clear();
+    progress.finish();
 
     let output = process.wait_with_output()?;
     if output.status.success() {
