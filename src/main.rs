@@ -46,8 +46,13 @@ pub struct Args {
     #[clap(long)]
     pub min_size: Option<String>,
 
+    /// Set the log level
     #[clap(short, long)]
     pub log: Option<tracing::level_filters::LevelFilter>,
+
+    /// Replace the original file with the transcoded one
+    #[clap(short, long)]
+    pub replace: bool,
 
     /// The path to scan for video files
     pub path: Utf8PathBuf,

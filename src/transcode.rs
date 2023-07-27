@@ -3,6 +3,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 use std::{fmt, fs};
 
+use camino::Utf8Path;
 use console::Term;
 use human_repr::HumanCount;
 use indicatif::{FormattedDuration, ProgressBar, ProgressState, ProgressStyle};
@@ -22,6 +23,7 @@ pub struct TranscodeOptions {
     pub effort: u8,
     pub codecs: Vec<String>,
     pub dry_run: bool,
+    pub replace: bool,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -31,19 +33,26 @@ impl From<Args> for TranscodeOptions {
             effort: args.effort,
             codecs: args.codecs,
             dry_run: args.dry_run,
+            replace: args.replace,
         }
     }
 }
 
-fn transcode_file(
-    file: &VideoFile,
-    options: &TranscodeOptions,
-    index: usize,
-    len: usize,
-) -> Result<()> {
-    let term = Term::stdout();
-    term.clear_screen()?;
+fn trim_path<'a>(path: &'a Utf8Path) -> &'a str {
+    const MAX_LEN: usize = 200;
 
+    if let Some(name) = path.file_name() {
+        if name.len() >= MAX_LEN {
+            &name[0..MAX_LEN]
+        } else {
+            name
+        }
+    } else {
+        ""
+    }
+}
+
+fn transcode_file(file: &VideoFile, options: &TranscodeOptions) -> Result<()> {
     let stem = file.path.file_stem().expect("file must have a name");
     let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
     if out_file.is_file() {
@@ -54,6 +63,7 @@ fn transcode_file(
     let effort = options.effort.to_string();
     let crf = options.crf.to_string();
     let args = vec![
+        "-y",
         "-i",
         file.path.as_str(),
         "-c:v",
@@ -102,7 +112,7 @@ fn transcode_file(
 
     let progress = ProgressBar::new((file.duration * 1000.0) as u64).with_style(
         ProgressStyle::with_template(
-            "{wide_bar:.cyan/blue} Trancoded {pos_duration} / {len_duration}, ETA: {eta}",
+            "{msg} {elapsed} {wide_bar:.cyan/blue} Trancoded {pos_duration} / {len_duration}, ETA: {eta}",
         )
         .unwrap()
         .with_key(
@@ -127,13 +137,12 @@ fn transcode_file(
                 .unwrap()
             },
         ),
-    );
-    progress.println(format!(
-        "Transcoding file '{}' ({} / {})",
-        file.path.file_name().unwrap(),
-        index + 1,
-        len
+    )
+    .with_message(format!(
+        "Transcoding file '{}'",
+        trim_path(&file.path),
     ));
+
     for line in reader.lines() {
         let line = line?;
         if let Some(captures) = OUT_TIME_REGEX.captures(&line) {
@@ -142,11 +151,16 @@ fn transcode_file(
             progress.set_position(duration.as_millis() as u64);
         }
     }
-    progress.finish();
+    progress.finish_and_clear();
 
     let output = process.wait_with_output()?;
     if output.status.success() {
-        fs::rename(tmp_file, out_file)?;
+        if options.replace {
+            fs::remove_file(&file.path)?;
+            fs::rename(tmp_file, &file.path)?;
+        } else {
+            fs::rename(tmp_file, out_file)?;
+        }
         Ok(())
     } else {
         commandline_error("ffmpeg", output)
@@ -161,6 +175,9 @@ impl Transcoder {
     }
 
     pub fn transcode_all(&self, files: Vec<VideoFile>, options: TranscodeOptions) -> Result<()> {
+        let term = Term::stdout();
+        term.clear_screen()?;
+
         let filtered_files: Vec<_> = files
             .into_iter()
             .filter(|f| options.codecs.contains(&f.codec))
@@ -168,14 +185,23 @@ impl Transcoder {
         let len = filtered_files.len();
         info!("transcoding {len} files (codecs {:?})", options.codecs);
 
-        for (index, file) in filtered_files.into_iter().enumerate() {
-            match transcode_file(&file, &options, index, len) {
-                Ok(_) => {}
+        let total_duration = filtered_files.iter().map(|f| f.duration).sum::<f64>() as u64;
+        let progress = ProgressBar::new(total_duration).with_style(
+            ProgressStyle::default_bar().template("Total progress {wide_bar:.cyan/blue} {eta}")?,
+        );
+        progress.tick();
+        for file in filtered_files {
+            match transcode_file(&file, &options) {
+                Ok(_) => {
+                    term.clear_screen()?;
+                    progress.inc(file.duration as u64);
+                }
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);
                 }
             }
         }
+        progress.finish();
 
         Ok(())
     }
