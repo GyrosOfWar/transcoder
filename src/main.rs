@@ -122,8 +122,8 @@ fn main() -> Result<()> {
     }
 
     let transcode_options = args.into();
-    let transcoder = Transcoder::new();
-    transcoder.transcode_all(files, transcode_options)?;
+    let transcoder = Transcoder::new(transcode_options, files);
+    transcoder.transcode_all()?;
 
     Ok(())
 }
