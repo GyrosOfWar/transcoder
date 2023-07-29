@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use camino::Utf8PathBuf;
 use clap::Parser;
 use collect::VideoFile;
+use human_repr::{HumanCount, HumanDuration};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -34,10 +35,6 @@ pub struct Args {
     #[clap(short, long, default_value = "h264")]
     pub codecs: Vec<String>,
 
-    /// Verbose output
-    #[clap(short, long)]
-    pub verbose: bool,
-
     /// Dry run, don't do anything
     #[clap(short, long)]
     pub dry_run: bool,
@@ -53,6 +50,10 @@ pub struct Args {
     /// Replace the original file with the transcoded one
     #[clap(short, long)]
     pub replace: bool,
+
+    /// Don't transcode, just print stats about the files at the location.
+    #[clap(long)]
+    pub stats: bool,
 
     /// The path to scan for video files
     pub path: Utf8PathBuf,
@@ -82,7 +83,7 @@ fn print_stats(files: &[VideoFile]) {
     let total_files = files.len();
 
     println!("Total files: {}", total_files);
-    println!("Total size: {}", total_size);
+    println!("Total size: {}", total_size.human_count_bytes());
 
     let codec_distribution =
         files
@@ -94,8 +95,10 @@ fn print_stats(files: &[VideoFile]) {
             });
     println!("File counts by codec:");
     for (codec, count) in codec_distribution {
-        println!("{}: {}", codec, count);
+        println!("\t{}: {}", codec, count);
     }
+    let total_duration = files.iter().map(|f| f.duration).sum::<f64>();
+    println!("Total duration: {}", total_duration.human_duration());
 }
 
 fn main() -> Result<()> {
@@ -117,8 +120,9 @@ fn main() -> Result<()> {
     let files = collector.gather_files()?;
     let files = collector.probe_files(files)?;
 
-    if args.verbose {
+    if args.stats {
         print_stats(&files);
+        return Ok(());
     }
 
     let transcode_options = args.into();

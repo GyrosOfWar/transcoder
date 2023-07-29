@@ -102,7 +102,7 @@ impl Transcoder {
         }
     }
 
-    fn transcode_file(&self, file: &VideoFile) -> Result<()> {
+    fn transcode_file(&self, file: &VideoFile, total_progress: &ProgressBar) -> Result<()> {
         let stem = file.path.file_stem().expect("file must have a name");
         let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
         if out_file.is_file() {
@@ -161,12 +161,17 @@ impl Transcoder {
         let reader = BufReader::new(stdout);
 
         let progress = self.progress.add(ffmpeg_progress_bar(file));
+        let mut last_postion = 0;
         for line in reader.lines() {
             let line = line?;
             if let Some(captures) = OUT_TIME_REGEX.captures(&line) {
                 let duration: u64 = captures.get(1).unwrap().as_str().parse::<u64>()?;
                 let duration = Duration::from_micros(duration);
-                progress.set_position(duration.as_millis() as u64);
+                let millis = duration.as_millis() as u64;
+                let delta = millis - last_postion;
+                progress.set_position(millis);
+                total_progress.inc(delta);
+                last_postion = millis;
             }
         }
         progress.finish_and_clear();
@@ -185,32 +190,32 @@ impl Transcoder {
         }
     }
 
-    pub fn transcode_all(self) -> Result<()> {
+    pub fn transcode_all(&self) -> Result<()> {
         let term = Term::stdout();
         term.clear_screen()?;
 
         let filtered_files: Vec<_> = self
             .files
-            .into_iter()
+            .iter()
             .filter(|f| self.options.codecs.contains(&f.codec))
             .collect();
         let len = filtered_files.len();
         info!("transcoding {len} files (codecs {:?})", self.options.codecs);
 
-        let total_duration = filtered_files.iter().map(|f| f.duration).sum::<f64>() as u64;
+        let total_duration = filtered_files
+            .iter()
+            .map(|f| Duration::from_secs_f64(f.duration).as_millis() as u64)
+            .sum();
 
-        let progress =
-            self.progress.add(
-                ProgressBar::new(total_duration).with_style(
-                    ProgressStyle::default_bar()
-                        .template("Total progress {wide_bar:.cyan/blue} {eta}")?,
-                ),
-            );
+        let progress = self.progress.add(
+            ProgressBar::new(total_duration).with_style(
+                ProgressStyle::default_bar()
+                    .template("Total progress {pos} / {len} {wide_bar:.cyan/blue} {eta}")?,
+            ),
+        );
         for file in filtered_files {
-            match self.transcode_file(&file) {
-                Ok(_) => {
-                    // TODO
-                }
+            match self.transcode_file(&file, &progress) {
+                Ok(_) => {}
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);
                 }
