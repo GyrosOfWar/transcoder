@@ -21,6 +21,14 @@ pub struct VideoFile {
     pub updated_at: Option<String>,
 }
 
+impl VideoFile {
+    #[allow(unused)]
+    pub fn difficulty(&self) -> u64 {
+        let (width, height) = self.resolution;
+        (width * height) as u64 * self.duration as u64 * self.bitrate * self.frame_rate as u64
+    }
+}
+
 const EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"];
 
 pub struct Collector {
@@ -103,6 +111,6 @@ impl Collector {
             })
             .collect();
 
-        Ok(results?)
+        results
     }
 }

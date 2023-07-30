@@ -61,7 +61,7 @@ pub struct Args {
 
 impl Args {
     pub fn min_size(&self) -> Option<u64> {
-        self.min_size.as_ref().and_then(|s| parse_bytes(&s))
+        self.min_size.as_ref().and_then(|s| parse_bytes(s))
     }
 }
 

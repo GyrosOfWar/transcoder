@@ -42,17 +42,17 @@ impl From<Args> for TranscodeOptions {
     }
 }
 
-fn trim_path<'a>(path: &'a Utf8Path) -> &'a str {
-    const MAX_LEN: usize = 200;
+fn trim_path(path: &Utf8Path) -> String {
+    const MAX_LEN: usize = 40;
 
     if let Some(name) = path.file_name() {
         if name.len() >= MAX_LEN {
-            &name[0..MAX_LEN]
+            format!("{}…", &name[0..MAX_LEN])
         } else {
-            name
+            name.into()
         }
     } else {
-        ""
+        "".into()
     }
 }
 
@@ -61,7 +61,7 @@ fn ffmpeg_progress_bar(file: &VideoFile, hidden: bool) -> ProgressBar {
         ProgressBar::hidden()
     } else {
         let style = ProgressStyle::with_template(
-            "{msg} {elapsed} {wide_bar:.cyan/blue} Trancoded {pos_duration} / {len_duration}, ETA: {eta}",
+            "{msg} {elapsed} {wide_bar:.cyan/blue} Transcoded {pos_duration} / {len_duration}, ETA: {eta}",
         )
         .unwrap()
         .with_key(
@@ -143,7 +143,7 @@ impl Transcoder {
             let args: Vec<_> = args
                 .iter()
                 .map(|s| {
-                    if s.contains(" ") {
+                    if s.contains(' ') {
                         format!("\"{}\"", s)
                     } else {
                         s.to_string()
@@ -170,9 +170,12 @@ impl Transcoder {
         let stdout = process.stdout.take().unwrap();
         let reader = BufReader::new(stdout);
 
+        let file_name = trim_path(&file.path);
+        info!("Transcoding file {}", file_name);
         let progress = self
             .progress
             .add(ffmpeg_progress_bar(file, self.options.progress_hidden));
+        progress.tick();
         let mut last_postion = 0;
         for line in reader.lines() {
             let line = line?;
@@ -181,6 +184,12 @@ impl Transcoder {
                 let duration: u64 = captures.get(1).unwrap().as_str().parse::<u64>()?;
                 let duration = Duration::from_micros(duration);
                 let millis = duration.as_millis() as u64;
+                info!(
+                    "{}: {} / {}",
+                    file_name,
+                    millis,
+                    (file.duration * 1000.0) as u64
+                );
                 let delta = millis - last_postion;
                 progress.inc(delta);
                 total_progress.inc(delta);
@@ -204,8 +213,10 @@ impl Transcoder {
     }
 
     pub fn transcode_all(&self) -> Result<()> {
-        let term = Term::stdout();
-        term.clear_screen()?;
+        if !self.options.progress_hidden {
+            let term = Term::stdout();
+            term.clear_screen()?;
+        }
 
         let filtered_files: Vec<_> = self
             .files
@@ -225,11 +236,12 @@ impl Transcoder {
         } else {
             ProgressBar::new(total_duration).with_style(
                 ProgressStyle::default_bar()
-                    .template("Total progress {pos} / {len} {wide_bar:.cyan/blue} {eta}")?,
+                    .template("Total progress: {wide_bar:.cyan/blue} {eta}")?,
             )
         });
+        progress.tick();
         for file in filtered_files {
-            match self.transcode_file(&file, &progress) {
+            match self.transcode_file(file, &progress) {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("Could not transcode file {}: {:?}", file.path, e);
