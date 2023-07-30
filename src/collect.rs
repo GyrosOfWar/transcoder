@@ -1,6 +1,6 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::ffprobe::ffprobe;
@@ -8,7 +8,6 @@ use crate::Result;
 
 #[derive(Debug, Clone)]
 pub struct VideoFile {
-    pub rowid: Option<i64>,
     pub path: Utf8PathBuf,
     /// Duration in seconds.
     pub duration: f64,
@@ -17,8 +16,6 @@ pub struct VideoFile {
     pub frame_rate: f64,
     pub codec: String,
     pub file_size: u64,
-    pub created_at: Option<String>,
-    pub updated_at: Option<String>,
 }
 
 impl VideoFile {
@@ -62,55 +59,48 @@ impl Collector {
         let mut files = vec![];
         let walker = WalkDir::new(&self.base_path).into_iter();
         for entry in walker.filter_entry(|e| !self.is_excluded(e)) {
-            let entry = entry?;
-            if entry.file_type().is_file() {
-                let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
-                if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
-                    if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
-                        if let Some(min_size) = self.min_size {
-                            let size = entry.metadata()?.len();
-                            if size <= min_size {
-                                debug!("skipping file {} because it is too small", path);
-                                continue;
+            match entry {
+                Ok(entry) => {
+                    if entry.file_type().is_file() {
+                        let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
+                        if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
+                            if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
+                                if let Some(min_size) = self.min_size {
+                                    let size = entry.metadata()?.len();
+                                    if size <= min_size {
+                                        debug!("skipping file {} because it is too small", path);
+                                        continue;
+                                    }
+                                }
+                                info!("found video file: {path}");
+                                files.push(path.to_owned())
                             }
                         }
-                        info!("found video file: {path}");
-                        files.push(path.to_owned())
                     }
                 }
+                Err(e) => warn!("error while walking directory: {}", e),
             }
         }
         Ok(files)
     }
 
     pub fn probe_files(&self, files: Vec<Utf8PathBuf>) -> Result<Vec<VideoFile>> {
-        let results: Result<Vec<_>> = files
+        let results: Vec<_> = files
             .into_par_iter()
-            .map(|f| {
-                let result = ffprobe(&f);
-                result.map(|result| {
-                    let size = result
-                        .format
-                        .size
-                        .as_ref()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or_default();
-                    VideoFile {
-                        rowid: None,
-                        path: f.to_owned(),
-                        duration: result.duration().unwrap_or_default(),
-                        resolution: result.resolution(),
-                        bitrate: result.bitrate(),
-                        frame_rate: result.frame_rate(),
-                        codec: result.video_codec().to_owned(),
-                        file_size: size,
-                        created_at: None,
-                        updated_at: None,
-                    }
+            .filter_map(|f| {
+                let result = ffprobe(&f).ok()?;
+                Some(VideoFile {
+                    path: f,
+                    duration: result.duration().unwrap_or_default(),
+                    resolution: result.resolution(),
+                    bitrate: result.bitrate(),
+                    frame_rate: result.frame_rate(),
+                    codec: result.video_codec().to_owned(),
+                    file_size: result.size(),
                 })
             })
             .collect();
 
-        results
+        Ok(results)
     }
 }

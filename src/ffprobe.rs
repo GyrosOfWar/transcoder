@@ -56,6 +56,14 @@ impl FfProbe {
             .map(|s| s.codec_name.as_deref().unwrap_or_default())
             .unwrap_or_default()
     }
+
+    pub fn size(&self) -> u64 {
+        self.format
+            .size
+            .as_ref()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize)]
