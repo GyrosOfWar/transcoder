@@ -6,10 +6,12 @@ use std::{fmt, fs};
 use camino::Utf8Path;
 use console::Term;
 use human_repr::HumanCount;
-use indicatif::{FormattedDuration, MultiProgress, ProgressBar, ProgressState, ProgressStyle};
+use indicatif::{
+    FormattedDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle,
+};
 use once_cell::sync::Lazy;
 use regex::Regex;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::collect::VideoFile;
 use crate::ffprobe::commandline_error;
@@ -24,6 +26,7 @@ pub struct TranscodeOptions {
     pub codecs: Vec<String>,
     pub dry_run: bool,
     pub replace: bool,
+    pub progress_hidden: bool,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -34,6 +37,7 @@ impl From<Args> for TranscodeOptions {
             codecs: args.codecs,
             dry_run: args.dry_run,
             replace: args.replace,
+            progress_hidden: args.log.is_some(),
         }
     }
 }
@@ -52,9 +56,11 @@ fn trim_path<'a>(path: &'a Utf8Path) -> &'a str {
     }
 }
 
-fn ffmpeg_progress_bar(file: &VideoFile) -> ProgressBar {
-    ProgressBar::new((file.duration * 1000.0) as u64).with_style(
-        ProgressStyle::with_template(
+fn ffmpeg_progress_bar(file: &VideoFile, hidden: bool) -> ProgressBar {
+    if hidden {
+        ProgressBar::hidden()
+    } else {
+        let style = ProgressStyle::with_template(
             "{msg} {elapsed} {wide_bar:.cyan/blue} Trancoded {pos_duration} / {len_duration}, ETA: {eta}",
         )
         .unwrap()
@@ -79,12 +85,11 @@ fn ffmpeg_progress_bar(file: &VideoFile) -> ProgressBar {
                 )
                 .unwrap()
             },
-        ),
-    )
-    .with_message(format!(
-        "Transcoding file '{}'",
-        trim_path(&file.path),
-    ))
+        );
+        ProgressBar::new((file.duration * 1000.0) as u64)
+            .with_style(style)
+            .with_message(format!("Transcoding file '{}'", trim_path(&file.path),))
+    }
 }
 
 pub struct Transcoder {
@@ -95,10 +100,15 @@ pub struct Transcoder {
 
 impl Transcoder {
     pub fn new(options: TranscodeOptions, files: Vec<VideoFile>) -> Self {
+        info!("Transcoding files with options {options:?}");
+        let progress = MultiProgress::new();
+        if options.progress_hidden {
+            progress.set_draw_target(ProgressDrawTarget::hidden());
+        }
         Self {
             options,
             files,
-            progress: MultiProgress::new(),
+            progress,
         }
     }
 
@@ -160,16 +170,19 @@ impl Transcoder {
         let stdout = process.stdout.take().unwrap();
         let reader = BufReader::new(stdout);
 
-        let progress = self.progress.add(ffmpeg_progress_bar(file));
+        let progress = self
+            .progress
+            .add(ffmpeg_progress_bar(file, self.options.progress_hidden));
         let mut last_postion = 0;
         for line in reader.lines() {
             let line = line?;
+            debug!("{}", line);
             if let Some(captures) = OUT_TIME_REGEX.captures(&line) {
                 let duration: u64 = captures.get(1).unwrap().as_str().parse::<u64>()?;
                 let duration = Duration::from_micros(duration);
                 let millis = duration.as_millis() as u64;
                 let delta = millis - last_postion;
-                progress.set_position(millis);
+                progress.inc(delta);
                 total_progress.inc(delta);
                 last_postion = millis;
             }
@@ -207,12 +220,14 @@ impl Transcoder {
             .map(|f| Duration::from_secs_f64(f.duration).as_millis() as u64)
             .sum();
 
-        let progress = self.progress.add(
+        let progress = self.progress.add(if self.options.progress_hidden {
+            ProgressBar::hidden()
+        } else {
             ProgressBar::new(total_duration).with_style(
                 ProgressStyle::default_bar()
                     .template("Total progress {pos} / {len} {wide_bar:.cyan/blue} {eta}")?,
-            ),
-        );
+            )
+        });
         for file in filtered_files {
             match self.transcode_file(&file, &progress) {
                 Ok(_) => {}
