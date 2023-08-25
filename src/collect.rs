@@ -83,15 +83,25 @@ impl Collector {
                         let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
                         if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
                             if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
-                                let size = entry.metadata()?.len();
-                                if let Some(min_size) = self.min_size {
-                                    if size <= min_size {
-                                        debug!("skipping file {} because it is too small", path);
-                                        continue;
+                                match path.metadata() {
+                                    Ok(metadata) => {
+                                        let size = metadata.len();
+                                        if let Some(min_size) = self.min_size {
+                                            if size <= min_size {
+                                                debug!(
+                                                    "skipping file {} because it is too small",
+                                                    path
+                                                );
+                                                continue;
+                                            }
+                                        }
+                                        info!("found video file: {path}");
+                                        files.push((path.to_owned(), size));
+                                    }
+                                    Err(e) => {
+                                        warn!("skipping file {} because of error: {}", path, e)
                                     }
                                 }
-                                info!("found video file: {path}");
-                                files.push((path.to_owned(), size));
                             }
                         }
                     }

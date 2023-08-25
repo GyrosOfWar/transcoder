@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
 use collect::{FileSortOrder, VideoFile};
 use human_repr::{HumanCount, HumanDuration};
+use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -112,6 +114,7 @@ fn print_stats(files: &[VideoFile]) {
 fn main() -> Result<()> {
     use std::env;
 
+    let start = Instant::now();
     let args = Args::parse();
 
     if let Some(level) = args.log {
@@ -142,6 +145,8 @@ fn main() -> Result<()> {
     let transcode_options = args.into();
     let transcoder = Transcoder::new(transcode_options, files);
     transcoder.transcode_all()?;
+    let duration = start.elapsed();
+    info!("total duration: {}", duration.human_duration());
 
     Ok(())
 }
