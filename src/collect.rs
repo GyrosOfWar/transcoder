@@ -1,4 +1,7 @@
+use std::cmp::Reverse;
+
 use camino::{Utf8Path, Utf8PathBuf};
+use clap::ValueEnum;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
@@ -28,18 +31,33 @@ impl VideoFile {
 
 const EXTENSIONS: &[&str] = &["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"];
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum FileSortOrder {
+    BiggestFirst,
+}
+
 pub struct Collector {
     exclude: Vec<String>,
     base_path: Utf8PathBuf,
     min_size: Option<u64>,
+    order: Option<FileSortOrder>,
+    count: Option<usize>,
 }
 
 impl Collector {
-    pub fn new(base_path: Utf8PathBuf, exclude: Vec<String>, min_size: Option<u64>) -> Self {
+    pub fn new(
+        base_path: Utf8PathBuf,
+        exclude: Vec<String>,
+        min_size: Option<u64>,
+        order: Option<FileSortOrder>,
+        count: Option<usize>,
+    ) -> Self {
         Self {
             exclude,
             base_path,
             min_size,
+            order,
+            count,
         }
     }
 
@@ -65,15 +83,15 @@ impl Collector {
                         let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
                         if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
                             if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
+                                let size = entry.metadata()?.len();
                                 if let Some(min_size) = self.min_size {
-                                    let size = entry.metadata()?.len();
                                     if size <= min_size {
                                         debug!("skipping file {} because it is too small", path);
                                         continue;
                                     }
                                 }
                                 info!("found video file: {path}");
-                                files.push(path.to_owned())
+                                files.push((path.to_owned(), size));
                             }
                         }
                     }
@@ -81,7 +99,20 @@ impl Collector {
                 Err(e) => warn!("error while walking directory: {}", e),
             }
         }
-        Ok(files)
+
+        if let Some(order) = self.order {
+            match order {
+                FileSortOrder::BiggestFirst => {
+                    files.sort_by_key(|(_, size)| Reverse(*size));
+                }
+            }
+        }
+
+        if let Some(count) = self.count {
+            files.truncate(count);
+        }
+
+        Ok(files.into_iter().map(|f| f.0).collect())
     }
 
     pub fn probe_files(&self, files: Vec<Utf8PathBuf>) -> Result<Vec<VideoFile>> {

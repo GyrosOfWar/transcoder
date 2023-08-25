@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use camino::Utf8PathBuf;
 use clap::Parser;
-use collect::VideoFile;
+use collect::{FileSortOrder, VideoFile};
 use human_repr::{HumanCount, HumanDuration};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -54,6 +54,14 @@ pub struct Args {
     /// Don't transcode, just print stats about the files at the location.
     #[clap(long)]
     pub stats: bool,
+
+    /// Sort order in which the files should be processed
+    #[clap(long)]
+    pub sort: Option<FileSortOrder>,
+
+    /// Limit how many files to process
+    #[clap(short, long)]
+    pub number: Option<usize>,
 
     /// The path to scan for video files
     pub path: Utf8PathBuf,
@@ -116,7 +124,13 @@ fn main() -> Result<()> {
         .init();
     color_eyre::install()?;
 
-    let collector = Collector::new(args.path.clone(), args.exclude.clone(), args.min_size());
+    let collector = Collector::new(
+        args.path.clone(),
+        args.exclude.clone(),
+        args.min_size(),
+        args.sort,
+        args.number,
+    );
     let files = collector.gather_files()?;
     let files = collector.probe_files(files)?;
 
