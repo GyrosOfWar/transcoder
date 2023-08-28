@@ -153,11 +153,11 @@ impl Transcoder {
             let args = args.join(" ");
 
             info!(
-                "Would transcode file {} with size {} and command 'ffmpeg {}'",
-                file.path.as_str(),
-                file.file_size.human_count_bytes(),
-                args
+                "Would transcode file '{}' with size {}",
+                file.path.file_name().expect("file must have a name"),
+                file.file_size.human_count_bytes()
             );
+            debug!("Command to run: ffmpeg {}", args);
             return Ok(());
         }
 
