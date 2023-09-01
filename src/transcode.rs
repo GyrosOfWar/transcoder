@@ -23,7 +23,6 @@ static OUT_TIME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"out_time_us=(\d+)
 pub struct TranscodeOptions {
     pub crf: u8,
     pub effort: u8,
-    pub codecs: Vec<String>,
     pub dry_run: bool,
     pub replace: bool,
     pub progress_hidden: bool,
@@ -34,7 +33,6 @@ impl From<Args> for TranscodeOptions {
         Self {
             crf: args.crf,
             effort: args.effort,
-            codecs: args.codecs,
             dry_run: args.dry_run,
             replace: args.replace,
             progress_hidden: args.log.is_some(),
@@ -234,13 +232,9 @@ impl Transcoder {
             term.hide_cursor()?;
         }
 
-        let filtered_files: Vec<_> = self
-            .files
-            .iter()
-            .filter(|f| self.options.codecs.contains(&f.codec))
-            .collect();
+        let filtered_files: Vec<_> = self.files.iter().filter(|f| f.codec != "av1").collect();
         let len = filtered_files.len();
-        info!("transcoding {len} files (codecs {:?})", self.options.codecs);
+        info!("transcoding {len} files");
 
         let total_duration = filtered_files
             .iter()
@@ -256,6 +250,7 @@ impl Transcoder {
             )
         });
         progress.tick();
+
         for (index, file) in filtered_files.into_iter().enumerate() {
             self.print_file_list(&self.progress, index)?;
             match self.transcode_file(file, &progress) {

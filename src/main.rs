@@ -33,10 +33,6 @@ pub struct Args {
     #[clap(short, long, default_value = "7")]
     pub effort: u8,
 
-    /// Codecs to transcode
-    #[clap(short, long, default_value = "h264")]
-    pub codecs: Vec<String>,
-
     /// Dry run, don't do anything
     #[clap(short, long)]
     pub dry_run: bool,

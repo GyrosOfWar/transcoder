@@ -240,8 +240,9 @@ pub fn ffprobe(path: impl AsRef<Utf8Path>) -> Result<FfProbe> {
 
     let output = Command::new("ffprobe").args(args).output()?;
     if output.status.success() {
-        let json = serde_json::from_slice(&output.stdout)?;
+        let json: FfProbe = serde_json::from_slice(&output.stdout)?;
         debug!("ffprobe output: {:#?}", json);
+        info!("{}: {}", path.as_ref(), json.video_codec());
         Ok(json)
     } else {
         commandline_error("ffprobe", output)
