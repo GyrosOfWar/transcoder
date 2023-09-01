@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::{fmt, fs};
 
 use camino::Utf8Path;
-use console::Term;
+use console::{Emoji, Term};
 use human_repr::HumanCount;
 use indicatif::{
     FormattedDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle,
@@ -112,6 +112,21 @@ impl Transcoder {
         }
     }
 
+    fn print_file_list(&self, term: &MultiProgress, completed_index: usize) -> Result<()> {
+        for (index, file) in self.files.iter().enumerate() {
+            let string = if index == completed_index {
+                format!("[{}] {}", Emoji("⚒️", "..."), trim_path(&file.path))
+            } else if index < completed_index {
+                format!("[{}] {}", Emoji("✅", "✓"), trim_path(&file.path))
+            } else {
+                format!("[ ] {}", trim_path(&file.path))
+            };
+
+            term.println(&string)?;
+        }
+        Ok(())
+    }
+
     fn transcode_file(&self, file: &VideoFile, total_progress: &ProgressBar) -> Result<()> {
         let stem = file.path.file_stem().expect("file must have a name");
         let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
@@ -213,9 +228,10 @@ impl Transcoder {
     }
 
     pub fn transcode_all(&self) -> Result<()> {
+        let term = Term::stderr();
         if !self.options.progress_hidden {
-            let term = Term::stdout();
             term.clear_screen()?;
+            term.hide_cursor()?;
         }
 
         let filtered_files: Vec<_> = self
@@ -240,7 +256,8 @@ impl Transcoder {
             )
         });
         progress.tick();
-        for file in filtered_files {
+        for (index, file) in filtered_files.into_iter().enumerate() {
+            self.print_file_list(&self.progress, index)?;
             match self.transcode_file(file, &progress) {
                 Ok(_) => {}
                 Err(e) => {
