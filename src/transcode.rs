@@ -26,6 +26,7 @@ pub struct TranscodeOptions {
     pub dry_run: bool,
     pub replace: bool,
     pub progress_hidden: bool,
+    pub ignored_codecs: Vec<String>,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -36,6 +37,7 @@ impl From<Args> for TranscodeOptions {
             dry_run: args.dry_run,
             replace: args.replace,
             progress_hidden: args.log.is_some(),
+            ignored_codecs: vec!["av1".into(), "hevc".into()],
         }
     }
 }
@@ -248,7 +250,11 @@ impl Transcoder {
             term.hide_cursor()?;
         }
 
-        let filtered_files: Vec<_> = self.files.iter().filter(|f| f.codec != "av1").collect();
+        let filtered_files: Vec<_> = self
+            .files
+            .iter()
+            .filter(|f| !self.options.ignored_codecs.contains(&f.codec))
+            .collect();
         let len = filtered_files.len();
         info!("transcoding {len} files");
 
