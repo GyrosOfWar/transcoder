@@ -22,7 +22,7 @@ pub type Result<T> = std::result::Result<T, color_eyre::Report>;
 #[derive(Parser, Debug)]
 pub struct Args {
     /// Exclude files that contain this string
-    #[clap(short, long)]
+    #[clap(short = 'E', long)]
     pub exclude: Vec<String>,
 
     /// CRF value to use for encoding

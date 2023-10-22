@@ -1,7 +1,9 @@
 use std::cmp::Reverse;
+use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::ValueEnum;
+use indicatif::ProgressBar;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
@@ -69,6 +71,10 @@ impl Collector {
     }
 
     pub fn gather_files(&self) -> Result<Vec<Utf8PathBuf>> {
+        let progress = ProgressBar::new_spinner();
+        progress.set_message("Gathering files...");
+        progress.enable_steady_tick(Duration::from_millis(250));
+
         info!("gathering files at {}", self.base_path);
         if self.base_path.is_file() {
             info!("path argument is a file, not a directory, returning it");
@@ -121,6 +127,8 @@ impl Collector {
         if let Some(count) = self.count {
             files.truncate(count);
         }
+
+        progress.finish_and_clear();
 
         Ok(files.into_iter().map(|f| f.0).collect())
     }

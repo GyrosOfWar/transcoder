@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use std::{fmt, fs};
+use std::{fmt, fs, thread};
 
 use camino::Utf8Path;
 use console::{Emoji, Term};
@@ -41,7 +41,7 @@ impl From<Args> for TranscodeOptions {
 }
 
 fn trim_path(path: &Utf8Path) -> String {
-    const MAX_LEN: usize = 40;
+    const MAX_LEN: usize = 65;
 
     if let Some(name) = path.file_name() {
         if name.len() >= MAX_LEN {
@@ -112,12 +112,23 @@ impl Transcoder {
 
     fn print_file_list(&self, term: &MultiProgress, completed_index: usize) -> Result<()> {
         for (index, file) in self.files.iter().enumerate() {
+            let size = file.file_size.human_count_bytes();
             let string = if index == completed_index {
-                format!("[{}] {}", Emoji("⚒️", "..."), trim_path(&file.path))
+                format!(
+                    "[{}] {} ({})",
+                    Emoji("⚒️", "..."),
+                    trim_path(&file.path),
+                    size
+                )
             } else if index < completed_index {
-                format!("[{}] {}", Emoji("✅", "✓"), trim_path(&file.path))
+                format!(
+                    "[{}] {} ({})",
+                    Emoji("✅", "✓"),
+                    trim_path(&file.path),
+                    size
+                )
             } else {
-                format!("[ ] {}", trim_path(&file.path))
+                format!("[ ] {} ({})", trim_path(&file.path), size)
             };
 
             term.println(&string)?;
@@ -126,6 +137,9 @@ impl Transcoder {
     }
 
     fn transcode_file(&self, file: &VideoFile, total_progress: &ProgressBar) -> Result<()> {
+        let progress = self
+            .progress
+            .add(ffmpeg_progress_bar(file, self.options.progress_hidden));
         let stem = file.path.file_stem().expect("file must have a name");
         let out_file = file.path.with_file_name(format!("{stem}_av1.mp4"));
         if out_file.is_file() {
@@ -171,6 +185,10 @@ impl Transcoder {
                 file.file_size.human_count_bytes()
             );
             debug!("Command to run: ffmpeg {}", args);
+            progress.tick();
+            thread::sleep(Duration::from_secs(1));
+            progress.finish_and_clear();
+            total_progress.inc((file.duration * 1000.0) as u64);
             return Ok(());
         }
 
@@ -185,9 +203,7 @@ impl Transcoder {
 
         let file_name = trim_path(&file.path);
         info!("Transcoding file {}", file_name);
-        let progress = self
-            .progress
-            .add(ffmpeg_progress_bar(file, self.options.progress_hidden));
+
         progress.tick();
         let mut last_postion = 0;
         for line in reader.lines() {
@@ -252,6 +268,7 @@ impl Transcoder {
         progress.tick();
 
         for (index, file) in filtered_files.into_iter().enumerate() {
+            term.clear_screen()?;
             self.print_file_list(&self.progress, index)?;
             match self.transcode_file(file, &progress) {
                 Ok(_) => {}
