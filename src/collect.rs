@@ -102,6 +102,7 @@ impl Collector {
                                             }
                                         }
                                         info!("found video file: {path}");
+
                                         files.push((path.to_owned(), size));
                                     }
                                     Err(e) => {
@@ -115,11 +116,18 @@ impl Collector {
                 Err(e) => warn!("error while walking directory: {}", e),
             }
         }
+        let mut files: Vec<_> = files
+            .into_par_iter()
+            .flat_map(|(path, size)| ffprobe(&path).map(|ffprobe| (path, ffprobe, size)))
+            .collect();
+        let excluded_codecs = &["hevc", "av1"];
+        files.retain(|(_, ffprobe, _)| !excluded_codecs.contains(&ffprobe.video_codec()));
 
+        info!("gathered {} files", files.len());
         if let Some(order) = self.order {
             match order {
                 FileSortOrder::BiggestFirst => {
-                    files.sort_by_key(|(_, size)| Reverse(*size));
+                    files.sort_by_key(|(_, _, size)| Reverse(*size));
                 }
             }
         }

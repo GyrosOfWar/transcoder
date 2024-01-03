@@ -250,15 +250,11 @@ impl Transcoder {
             term.hide_cursor()?;
         }
 
-        let filtered_files: Vec<_> = self
-            .files
-            .iter()
-            .filter(|f| !self.options.ignored_codecs.contains(&f.codec))
-            .collect();
-        let len = filtered_files.len();
+        let len = self.files.len();
         info!("transcoding {len} files");
 
-        let total_duration = filtered_files
+        let total_duration = self
+            .files
             .iter()
             .map(|f| Duration::from_secs_f64(f.duration).as_millis() as u64)
             .sum();
@@ -272,10 +268,11 @@ impl Transcoder {
             )
         });
         progress.tick();
-
-        for (index, file) in filtered_files.into_iter().enumerate() {
+        for (index, file) in self.files.iter().enumerate() {
             term.clear_screen()?;
-            self.print_file_list(&self.progress, index)?;
+            if len > 1 {
+                self.print_file_list(&self.progress, index)?;
+            }
             match self.transcode_file(file, &progress) {
                 Ok(_) => {}
                 Err(e) => {
