@@ -53,6 +53,10 @@ pub struct Args {
     #[clap(long)]
     pub stats: bool,
 
+    /// Use the GPU (nvenv) for transcoding
+    #[clap(long)]
+    pub gpu: bool,
+
     /// Sort order in which the files should be processed
     #[clap(long)]
     pub sort: Option<FileSortOrder>,

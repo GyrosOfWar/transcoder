@@ -27,6 +27,7 @@ pub struct TranscodeOptions {
     pub replace: bool,
     pub progress_hidden: bool,
     pub ignored_codecs: Vec<String>,
+    pub gpu: bool,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -38,6 +39,7 @@ impl From<Args> for TranscodeOptions {
             replace: args.replace,
             progress_hidden: args.log.is_some(),
             ignored_codecs: vec!["av1".into(), "hevc".into()],
+            gpu: args.gpu,
         }
     }
 }
@@ -151,23 +153,45 @@ impl Transcoder {
         let tmp_file = file.path.with_file_name(format!("{stem}_tmp.mp4"));
         let effort = self.options.effort.to_string();
         let crf = self.options.crf.to_string();
-        let args = vec![
-            "-y",
-            "-i",
-            file.path.as_str(),
-            "-c:v",
-            "libsvtav1",
-            "-preset",
-            &effort,
-            "-crf",
-            &crf,
-            "-c:a",
-            "copy",
-            "-progress",
-            "-",
-            "-nostats",
-            tmp_file.as_str(),
-        ];
+        let args = if self.options.gpu {
+            vec![
+                "-y",
+                "-i",
+                file.path.as_str(),
+                "-c:v",
+                "av1_nvenc",
+                "-preset",
+                &effort,
+                "-rc",
+                "vbr_hq",
+                "-cq",
+                &crf,
+                "-c:a",
+                "copy",
+                "-progress",
+                "-",
+                "-nostats",
+                tmp_file.as_str(),
+            ]
+        } else {
+            vec![
+                "-y",
+                "-i",
+                file.path.as_str(),
+                "-c:v",
+                "libsvtav1",
+                "-preset",
+                &effort,
+                "-crf",
+                &crf,
+                "-c:a",
+                "copy",
+                "-progress",
+                "-",
+                "-nostats",
+                tmp_file.as_str(),
+            ]
+        };
         if self.options.dry_run {
             let args: Vec<_> = args
                 .iter()
