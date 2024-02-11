@@ -151,7 +151,11 @@ impl Transcoder {
             return Ok(());
         }
         let tmp_file = file.path.with_file_name(format!("{stem}_tmp.mp4"));
-        let effort = self.options.effort.to_string();
+        let effort = if self.options.gpu {
+            format!("p{}", self.options.effort)
+        } else {
+            self.options.effort.to_string()
+        };
         let crf = self.options.crf.to_string();
         let args = if self.options.gpu {
             vec![
@@ -161,11 +165,17 @@ impl Transcoder {
                 "-c:v",
                 "av1_nvenc",
                 "-preset",
-                &effort,
-                "-rc",
-                "vbr_hq",
+                "p7",
                 "-cq",
-                &crf,
+                "25",
+                "-rc-lookahead",
+                "24",
+                "-b_adapt",
+                "1",
+                "-temporal-aq",
+                "1",
+                "-spatial-aq",
+                "1",
                 "-c:a",
                 "copy",
                 "-progress",
@@ -210,9 +220,8 @@ impl Transcoder {
                 file.path.file_name().expect("file must have a name"),
                 file.file_size.human_count_bytes()
             );
-            debug!("Command to run: ffmpeg {}", args);
+            info!("Command to run: ffmpeg {}", args);
             progress.tick();
-            thread::sleep(Duration::from_secs(1));
             progress.finish_and_clear();
             total_progress.inc((file.duration * 1000.0) as u64);
             return Ok(());
