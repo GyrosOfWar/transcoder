@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::ValueEnum;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
@@ -116,10 +116,20 @@ impl Collector {
                 Err(e) => warn!("error while walking directory: {}", e),
             }
         }
+        progress.finish_and_clear();
+
+        let progress = ProgressBar::new(files.len() as u64)
+            .with_style(ProgressStyle::default_bar().template("{wide_bar:.cyan/blue} {eta}")?);
+        progress.tick();
+
         let mut files: Vec<_> = files
             .into_par_iter()
             .flat_map(|(path, size)| ffprobe(&path).map(|ffprobe| (path, ffprobe, size)))
+            .inspect(|_| progress.inc(1))
             .collect();
+
+        progress.finish_and_clear();
+
         let excluded_codecs = &["hevc", "av1"];
         files.retain(|(_, ffprobe, _)| !excluded_codecs.contains(&ffprobe.video_codec()));
 
@@ -135,8 +145,6 @@ impl Collector {
         if let Some(count) = self.count {
             files.truncate(count);
         }
-
-        progress.finish_and_clear();
 
         Ok(files.into_iter().map(|f| f.0).collect())
     }

@@ -167,7 +167,7 @@ impl Transcoder {
                 "-preset",
                 "p7",
                 "-cq",
-                "25",
+                &crf,
                 "-rc-lookahead",
                 "24",
                 "-b_adapt",
