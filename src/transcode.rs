@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use std::{fmt, fs, thread};
+use std::{fmt, fs};
 
 use camino::Utf8Path;
 use console::{Emoji, Term};
