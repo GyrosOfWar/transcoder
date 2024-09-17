@@ -49,7 +49,7 @@ fn trim_path(path: &Utf8Path) -> String {
 
     if let Some(name) = path.file_name() {
         if name.len() >= MAX_LEN {
-            format!("{}…", &name[0..MAX_LEN])
+            format!("{}…", name.chars().take(MAX_LEN - 1).collect::<String>())
         } else {
             name.into()
         }
@@ -166,6 +166,8 @@ impl Transcoder {
                 "av1_nvenc",
                 "-preset",
                 "p7",
+                "-tune",
+                "hq",
                 "-cq",
                 &crf,
                 "-rc-lookahead",
@@ -264,6 +266,23 @@ impl Transcoder {
 
         let output = process.wait_with_output()?;
         if output.status.success() {
+            let new_file_size = fs::metadata(&tmp_file)?.len();
+            info!(
+                "Transcoded file {} to size {} from {}",
+                file_name,
+                new_file_size.human_count_bytes(),
+                file.file_size.human_count_bytes()
+            );
+
+            if new_file_size >= file.file_size {
+                warn!(
+                    "Transcoded file {} is larger than original, skipping",
+                    file_name
+                );
+                fs::remove_file(tmp_file)?;
+                return Ok(());
+            }
+
             if self.options.replace {
                 fs::remove_file(&file.path)?;
                 fs::rename(tmp_file, &file.path)?;
