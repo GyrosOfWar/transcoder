@@ -61,6 +61,10 @@ pub struct Args {
     #[clap(long)]
     pub sort: Option<FileSortOrder>,
 
+    /// Number of files to process in parallel.
+    #[clap(short, long)]
+    pub parallel: u32,
+
     /// Limit how many files to process
     #[clap(short, long)]
     pub number: Option<usize>,

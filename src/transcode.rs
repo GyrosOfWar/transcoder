@@ -10,6 +10,8 @@ use indicatif::{
     FormattedDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle,
 };
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use regex::Regex;
 use tracing::{debug, info, warn};
 
@@ -28,6 +30,7 @@ pub struct TranscodeOptions {
     pub progress_hidden: bool,
     pub ignored_codecs: Vec<String>,
     pub gpu: bool,
+    pub parallel: u32,
 }
 
 impl From<Args> for TranscodeOptions {
@@ -40,6 +43,7 @@ impl From<Args> for TranscodeOptions {
             progress_hidden: args.log.is_some(),
             ignored_codecs: vec!["av1".into(), "hevc".into()],
             gpu: args.gpu,
+            parallel: args.parallel,
         }
     }
 }
@@ -296,43 +300,45 @@ impl Transcoder {
     }
 
     pub fn transcode_all(&self) -> Result<()> {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(self.options.parallel as usize)
+            .build()?;
         let term = Term::stderr();
         if !self.options.progress_hidden {
             term.clear_screen()?;
             term.hide_cursor()?;
         }
 
-        let len = self.files.len();
-        info!("transcoding {len} files");
+        pool.install(|| {
+            let len = self.files.len();
+            info!("transcoding {len} files");
 
-        let total_duration = self
-            .files
-            .iter()
-            .map(|f| Duration::from_secs_f64(f.duration).as_millis() as u64)
-            .sum();
+            let total_duration = self
+                .files
+                .iter()
+                .map(|f| Duration::from_secs_f64(f.duration).as_millis() as u64)
+                .sum();
 
-        let progress = self.progress.add(if self.options.progress_hidden {
-            ProgressBar::hidden()
-        } else {
-            ProgressBar::new(total_duration).with_style(
-                ProgressStyle::default_bar()
-                    .template("Total progress: {wide_bar:.cyan/blue} {eta}")?,
-            )
-        });
-        progress.tick();
-        for (index, file) in self.files.iter().enumerate() {
-            term.clear_screen()?;
-            if len > 1 {
-                self.print_file_list(&self.progress, index)?;
-            }
-            match self.transcode_file(file, &progress) {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("Could not transcode file {}: {:?}", file.path, e);
+            let total_progress = self.progress.add(if self.options.progress_hidden {
+                ProgressBar::hidden()
+            } else {
+                ProgressBar::new(total_duration).with_style(
+                    ProgressStyle::default_bar()
+                        .template("Total progress: {wide_bar:.cyan/blue} {eta}")
+                        .expect("bad progressbar template"),
+                )
+            });
+            total_progress.tick();
+
+            self.files.par_iter().enumerate().for_each(|(index, file)| {
+                match self.transcode_file(file, &total_progress) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("Could not transcode file {}: {:?}", file.path, e);
+                    }
                 }
-            }
-        }
-
+            });
+        });
         Ok(())
     }
 }
