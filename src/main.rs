@@ -3,9 +3,8 @@ use std::time::Instant;
 
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
-use collect::{FileSortOrder, VideoFile};
+use collect::VideoFile;
 use human_repr::{HumanCount, HumanDuration};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -13,7 +12,6 @@ use tracing_subscriber::EnvFilter;
 
 use crate::collect::Collector;
 use crate::database::Database;
-use crate::ffprobe::ffprobe;
 use crate::transcode::{GpuMode, TranscodeOptions, Transcoder};
 
 mod collect;
@@ -140,15 +138,6 @@ fn main() -> Result<()> {
             let min_size = min_size.as_deref().and_then(parse_bytes);
             let collector = Collector::new(database.clone(), path, exclude, min_size);
             collector.gather_files()?;
-            database
-                .list()?
-                .into_par_iter()
-                .filter(|f| f.ffprobe_info.is_none())
-                .try_for_each(|f| {
-                    let info = ffprobe(&f.path)?;
-                    database.set_ffprobe_info(f.rowid, &info)?;
-                    Ok::<_, color_eyre::Report>(())
-                })?;
         }
         Command::Transcode {
             crf,

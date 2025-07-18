@@ -29,16 +29,12 @@ pub struct TranscodeFile {
     pub updated_on: Timestamp,
     pub error_message: Option<String>,
     pub file_size: i64,
-    pub ffprobe_info: Option<String>,
+    pub ffprobe_info: String,
 }
 
 impl TranscodeFile {
     pub fn ffprobe(&self) -> Option<FfProbe> {
-        if let Some(info) = &self.ffprobe_info {
-            serde_json::from_str(info).ok()
-        } else {
-            None
-        }
+        serde_json::from_str(&self.ffprobe_info).ok()
     }
 }
 
@@ -46,6 +42,7 @@ impl TranscodeFile {
 pub struct NewTranscodeFile {
     pub path: Utf8PathBuf,
     pub file_size: u64,
+    pub ffprobe_info: FfProbe,
 }
 
 #[derive(Clone)]
@@ -114,9 +111,16 @@ impl Database {
         let now = Timestamp::now().as_second();
         let tx = connection.transaction()?;
         {
-            let mut statement = tx.prepare("INSERT INTO transcode_files (path, created_on, updated_on, file_size) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (path) DO NOTHING")?;
+            let mut statement = tx.prepare("INSERT INTO transcode_files (path, created_on, updated_on, file_size, ffprobe_info) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (path) DO NOTHING")?;
             for file in files {
-                statement.execute(params![file.path.as_str(), now, now, file.file_size as i64,])?;
+                let json_info = serde_json::to_string(&file.ffprobe_info)?;
+                statement.execute(params![
+                    file.path.as_str(),
+                    now,
+                    now,
+                    file.file_size as i64,
+                    json_info
+                ])?;
             }
         }
 
@@ -164,6 +168,7 @@ mod tests {
         db.insert(NewTranscodeFile {
             path: "/stuff/1.mp4".into(),
             file_size: 696969,
+            ffprobe_info: FfProbe::default(),
         })?;
 
         let rows = db.list()?;
@@ -181,6 +186,7 @@ mod tests {
             .map(|i| NewTranscodeFile {
                 path: format!("/stuff/{i}.mp4").into(),
                 file_size: 69 * i,
+                ffprobe_info: FfProbe::default(),
             })
             .collect();
 
@@ -200,11 +206,13 @@ mod tests {
         db.insert(NewTranscodeFile {
             path: "/1.mp4".into(),
             file_size: 5,
+            ffprobe_info: FfProbe::default(),
         })?;
 
         let error = db.insert(NewTranscodeFile {
             path: "/1.mp4".into(),
             file_size: 5,
+            ffprobe_info: FfProbe::default(),
         });
 
         assert!(error.is_err());
@@ -217,16 +225,17 @@ mod tests {
     #[test]
     fn test_ffprobe_info() -> Result<()> {
         let db = Database::in_memory()?;
+        let ffprobe = ffprobe("./samples/claire.mp4")?;
+
         let file = NewTranscodeFile {
             path: "./samples/claire.mp4".into(),
             file_size: 130 * 1000 * 1000,
+            ffprobe_info: ffprobe.clone(),
         };
         db.insert(file)?;
-        let ffprobe = ffprobe("./samples/claire.mp4")?;
-        db.set_ffprobe_info(1, &ffprobe)?;
         let rows = db.list()?;
         assert_eq!(1, rows.len());
-        assert!(rows[0].ffprobe_info.is_some());
+        assert!(rows[0].ffprobe().is_some());
 
         Ok(())
     }

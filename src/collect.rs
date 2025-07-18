@@ -132,14 +132,22 @@ impl Collector {
         }
         progress.finish_and_clear();
 
-        let progress = ProgressBar::new(files.len() as u64)
-            .with_style(ProgressStyle::default_bar().template("{wide_bar:.cyan/blue} {eta}")?);
+        let progress = ProgressBar::new(files.len() as u64).with_style(
+            ProgressStyle::default_bar().template("{msg} {wide_bar:.cyan/blue} {eta}")?,
+        );
         progress.tick();
 
         let mut files: Vec<_> = files
             .into_par_iter()
             .flat_map(|(path, size)| ffprobe(&path).map(|ffprobe| (path, ffprobe, size)))
-            .inspect(|_| progress.inc(1))
+            .inspect(|p| {
+                let mut name = p.0.file_name().unwrap_or_default();
+                if name.len() > 40 {
+                    name = &name[..40];
+                }
+                progress.set_message(format!("Processing {:40}", name));
+                progress.inc(1);
+            })
             .collect();
 
         progress.finish_and_clear();
@@ -154,6 +162,7 @@ impl Collector {
             .map(|f| NewTranscodeFile {
                 file_size: f.2,
                 path: f.0.clone(),
+                ffprobe_info: f.1.clone(),
             })
             .collect();
         self.database.insert_batch(&records)?;
