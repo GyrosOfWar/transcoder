@@ -14,8 +14,9 @@ use crate::Result;
 
 fn file_name_short(path: &Utf8Path, len: usize) -> Cow<'_, str> {
     let name = path.file_name().unwrap_or_default();
-    if name.len() > len {
-        Cow::Owned(name.chars().take(len - 1).collect::<String>() + "...")
+    let char_count = name.chars().count();
+    if char_count > len {
+        Cow::Owned(name.chars().take(len - 1).collect::<String>() + "…")
     } else {
         Cow::Borrowed(name)
     }
@@ -47,13 +48,6 @@ impl From<TranscodeFile> for VideoFile {
             codec: info.video_codec().to_owned(),
             file_size: value.file_size as u64,
         }
-    }
-}
-
-impl VideoFile {
-    pub fn difficulty(&self) -> u64 {
-        let (width, height) = self.resolution;
-        (width * height) as u64 * self.duration as u64 * self.bitrate * self.frame_rate as u64
     }
 }
 

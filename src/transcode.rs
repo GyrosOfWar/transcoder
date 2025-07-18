@@ -36,7 +36,6 @@ pub struct TranscodeOptions {
     pub dry_run: bool,
     pub replace: bool,
     pub progress_hidden: bool,
-    pub ignored_codecs: Vec<String>,
     pub gpu: Option<GpuMode>,
     pub parallel: u32,
 }

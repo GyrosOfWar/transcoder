@@ -1,3 +1,5 @@
+use std::fmt;
+
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use r2d2::Pool;
@@ -16,6 +18,16 @@ pub enum TranscodeStatus {
     Pending,
     Success,
     Error,
+}
+
+impl fmt::Display for TranscodeStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TranscodeStatus::Pending => write!(f, "Pending"),
+            TranscodeStatus::Success => write!(f, "Success"),
+            TranscodeStatus::Error => write!(f, "Error"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

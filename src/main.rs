@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use collect::VideoFile;
 use human_repr::{HumanCount, HumanDuration};
+use tabled::settings::Style;
+use tabled::{Table, Tabled};
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -62,7 +64,8 @@ pub enum Command {
         #[clap(short, long, default_value = "1")]
         parallel: u32,
     },
-    Info,
+    Stats,
+    List,
 }
 
 #[derive(Parser, Debug)]
@@ -109,6 +112,19 @@ fn print_stats(files: &[VideoFile]) {
     }
     let total_duration = files.iter().map(|f| f.duration).sum::<f64>();
     println!("Total duration: {}", total_duration.human_duration());
+
+    let resolution_distribution =
+        files
+            .iter()
+            .map(|f| f.resolution)
+            .fold(BTreeMap::new(), |mut acc, res| {
+                *acc.entry(res).or_insert(0) += 1;
+                acc
+            });
+    println!("File counts by resolution:");
+    for (resolution, count) in resolution_distribution {
+        println!("\t{}x{}: {}", resolution.0, resolution.1, count);
+    }
 }
 
 fn main() -> Result<()> {
@@ -157,7 +173,6 @@ fn main() -> Result<()> {
                 gpu,
                 parallel,
                 progress_hidden: args.log.is_some(),
-                ignored_codecs: vec!["av1".into(), "hevc".into()],
             };
             let files: Vec<_> = files.into_iter().map(From::from).collect();
             let transcoder = Transcoder::new(database, transcode_options, files);
@@ -165,7 +180,43 @@ fn main() -> Result<()> {
             let duration = start.elapsed();
             info!("total duration: {}", duration.human_duration());
         }
-        Command::Info => {}
+        Command::Stats => {
+            let files = database.list()?;
+            let video_files: Vec<_> = files.into_iter().map(From::from).collect();
+            print_stats(&video_files);
+        }
+        Command::List => {
+            #[derive(Tabled)]
+            struct TableEntry<'a> {
+                file_name: &'a str,
+                file_size: String,
+                codec: String,
+                resolution: String,
+                status: String,
+            }
+
+            let files = database.list()?;
+            let entries: Vec<_> = files
+                .iter()
+                .map(|f| TableEntry {
+                    file_name: f.path.file_name().unwrap_or_default(),
+                    file_size: f.file_size.human_count_bytes().to_string(),
+                    codec: f
+                        .ffprobe()
+                        .as_ref()
+                        .map_or("Unknown", |info| info.video_codec())
+                        .to_string(),
+                    resolution: f.ffprobe().as_ref().map_or("Unknown".to_string(), |info| {
+                        let (width, height) = info.resolution();
+                        format!("{}x{}", width, height)
+                    }),
+                    status: f.status.to_string(),
+                })
+                .collect();
+            let mut table = Table::new(entries);
+            table.with(Style::modern());
+            println!("{}", table);
+        }
     }
     Ok(())
 }
