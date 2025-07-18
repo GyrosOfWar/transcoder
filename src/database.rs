@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_rusqlite::from_rows;
 use tracing::info;
 
-use crate::ffprobe::FfProbe;
 use crate::Result;
+use crate::ffprobe::FfProbe;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -89,6 +89,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn insert(&self, file: NewTranscodeFile) -> Result<()> {
         let connection = self.db.get()?;
         let now = Timestamp::now().as_second();
@@ -138,16 +139,6 @@ impl Database {
 
         tx.commit()?;
 
-        Ok(())
-    }
-
-    pub fn set_ffprobe_info(&self, rowid: i64, info: &FfProbe) -> Result<()> {
-        let connection = self.db.get()?;
-        let json_info = serde_json::to_string(info)?;
-        connection.execute(
-            "UPDATE transcode_files SET ffprobe_info = ?1 WHERE rowid = ?2",
-            params![json_info, rowid],
-        )?;
         Ok(())
     }
 

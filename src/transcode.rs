@@ -11,15 +11,15 @@ use indicatif::{
     FormattedDuration, MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle,
 };
 use once_cell::sync::Lazy;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use regex::Regex;
 use tracing::{debug, info, warn};
 
+use crate::Result;
 use crate::collect::VideoFile;
 use crate::database::{Database, TranscodeStatus};
 use crate::ffprobe::commandline_error;
-use crate::Result;
 
 static OUT_TIME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"out_time_us=(\d+)").unwrap());
 
@@ -112,6 +112,7 @@ impl Transcoder {
         }
     }
 
+    #[allow(unused)]
     fn print_file_list(&self, term: &MultiProgress, completed_index: usize) -> Result<()> {
         for (index, file) in self.files.iter().enumerate() {
             let size = file.file_size.human_count_bytes();
