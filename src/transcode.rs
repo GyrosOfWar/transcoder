@@ -14,9 +14,11 @@ use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use regex::Regex;
+use serde_json::Error;
 use tracing::{debug, info, warn};
 
 use crate::collect::VideoFile;
+use crate::database::{Database, TranscodeStatus};
 use crate::ffprobe::commandline_error;
 use crate::{Args, Result};
 
@@ -94,16 +96,18 @@ pub struct Transcoder {
     options: TranscodeOptions,
     files: Vec<VideoFile>,
     progress: MultiProgress,
+    database: Database,
 }
 
 impl Transcoder {
-    pub fn new(options: TranscodeOptions, files: Vec<VideoFile>) -> Self {
+    pub fn new(database: Database, options: TranscodeOptions, files: Vec<VideoFile>) -> Self {
         info!("Transcoding files with options {options:?}");
         let progress = MultiProgress::new();
         if options.progress_hidden {
             progress.set_draw_target(ProgressDrawTarget::hidden());
         }
         Self {
+            database,
             options,
             files,
             progress,
@@ -308,9 +312,19 @@ impl Transcoder {
             } else {
                 fs::rename(tmp_file, out_file)?;
             }
+
+            self.database
+                .set_file_status(file.rowid, TranscodeStatus::Success, None)?;
             Ok(())
         } else {
-            commandline_error("ffmpeg", output)
+            let error = commandline_error("ffmpeg", output);
+            self.database.set_file_status(
+                file.rowid,
+                TranscodeStatus::Error,
+                Some(error.to_string()),
+            )?;
+
+            Err(error)
         }
     }
 

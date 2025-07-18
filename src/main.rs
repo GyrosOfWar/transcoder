@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 use crate::collect::Collector;
 use crate::database::Database;
 use crate::ffprobe::ffprobe;
-use crate::transcode::{GpuMode, Transcoder};
+use crate::transcode::{GpuMode, TranscodeOptions, Transcoder};
 
 mod collect;
 mod database;
@@ -37,6 +37,10 @@ pub enum Command {
         path: Utf8PathBuf,
     },
     Transcode {
+        /// Limit how many files to process
+        #[clap(short, long)]
+        number: Option<i64>,
+
         /// CRF value to use for encoding
         #[clap(short, long, default_value = "24")]
         crf: u8,
@@ -52,10 +56,6 @@ pub enum Command {
         #[clap(short, long)]
         replace: bool,
 
-        /// Sort order in which the files should be processed
-        #[clap(long)]
-        sort: Option<FileSortOrder>,
-
         /// Use the GPU for transcoding
         #[clap(long)]
         gpu: Option<GpuMode>,
@@ -63,10 +63,6 @@ pub enum Command {
         /// Number of files to process in parallel.
         #[clap(short, long, default_value = "1")]
         parallel: u32,
-
-        /// Limit how many files to process
-        #[clap(short, long)]
-        number: Option<usize>,
     },
     Info,
 }
@@ -144,46 +140,43 @@ fn main() -> Result<()> {
             let min_size = min_size.as_deref().and_then(parse_bytes);
             let collector = Collector::new(database.clone(), path, exclude, min_size);
             collector.gather_files()?;
-            database.list()?.into_par_iter().try_for_each(|f| {
-                let info = ffprobe(&f.path)?;
-                database.set_ffprobe_info(f.rowid, &info)?;
-                Ok::<_, color_eyre::Report>(())
-            })?;
+            database
+                .list()?
+                .into_par_iter()
+                .filter(|f| f.ffprobe_info.is_none())
+                .try_for_each(|f| {
+                    let info = ffprobe(&f.path)?;
+                    database.set_ffprobe_info(f.rowid, &info)?;
+                    Ok::<_, color_eyre::Report>(())
+                })?;
         }
         Command::Transcode {
             crf,
             effort,
             dry_run,
             replace,
-            sort,
             gpu,
             parallel,
             number,
-        } => todo!(),
-        Command::Info => todo!(),
+        } => {
+            let files = database.list_limit(number)?;
+            let transcode_options = TranscodeOptions {
+                crf,
+                effort,
+                dry_run,
+                replace,
+                gpu,
+                parallel,
+                progress_hidden: args.log.is_some(),
+                ignored_codecs: vec!["av1".into(), "hevc".into()],
+            };
+            let files: Vec<_> = files.into_iter().map(From::from).collect();
+            let transcoder = Transcoder::new(database, transcode_options, files);
+            transcoder.transcode_all()?;
+            let duration = start.elapsed();
+            info!("total duration: {}", duration.human_duration());
+        }
+        Command::Info => {}
     }
-
-    // let collector = Collector::new(
-    //     database,
-    //     args.path.clone(),
-    //     args.exclude.clone(),
-    //     args.min_size(),
-    //     args.sort,
-    //     args.number,
-    // );
-    // let files = collector.gather_files()?;
-    // let files = collector.probe_files(files)?;
-
-    // if args.stats {
-    //     print_stats(&files);
-    //     return Ok(());
-    // }
-
-    // let transcode_options = args.into();
-    // let transcoder = Transcoder::new(transcode_options, files);
-    // transcoder.transcode_all()?;
-    // let duration = start.elapsed();
-    // info!("total duration: {}", duration.human_duration());
-
     Ok(())
 }

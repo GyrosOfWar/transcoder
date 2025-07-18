@@ -7,12 +7,13 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
 
-use crate::database::{Database, NewTranscodeFile};
+use crate::database::{Database, NewTranscodeFile, TranscodeFile};
 use crate::ffprobe::ffprobe;
 use crate::Result;
 
 #[derive(Debug, Clone)]
 pub struct VideoFile {
+    pub rowid: i64,
     pub path: Utf8PathBuf,
     /// Duration in seconds.
     pub duration: f64,
@@ -21,6 +22,22 @@ pub struct VideoFile {
     pub frame_rate: f64,
     pub codec: String,
     pub file_size: u64,
+}
+
+impl From<TranscodeFile> for VideoFile {
+    fn from(value: TranscodeFile) -> Self {
+        let info = value.ffprobe().expect("ffprobe info must be present");
+        VideoFile {
+            rowid: value.rowid,
+            path: value.path,
+            duration: info.duration().unwrap_or_default(),
+            resolution: info.resolution(),
+            bitrate: info.bitrate(),
+            frame_rate: info.frame_rate(),
+            codec: info.video_codec().to_owned(),
+            file_size: value.file_size as u64,
+        }
+    }
 }
 
 impl VideoFile {
@@ -142,25 +159,5 @@ impl Collector {
         self.database.insert_batch(&records)?;
 
         Ok(files.into_iter().map(|f| f.0).collect())
-    }
-
-    pub fn probe_files(&self, files: Vec<Utf8PathBuf>) -> Result<Vec<VideoFile>> {
-        let results: Vec<_> = files
-            .into_par_iter()
-            .filter_map(|f| {
-                let result = ffprobe(&f).ok()?;
-                Some(VideoFile {
-                    path: f,
-                    duration: result.duration().unwrap_or_default(),
-                    resolution: result.resolution(),
-                    bitrate: result.bitrate(),
-                    frame_rate: result.frame_rate(),
-                    codec: result.video_codec().to_owned(),
-                    file_size: result.size(),
-                })
-            })
-            .collect();
-
-        Ok(results)
     }
 }

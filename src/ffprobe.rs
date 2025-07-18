@@ -212,18 +212,18 @@ pub struct FormatTags {
     pub encoder: Option<String>,
 }
 
-pub fn commandline_error<T>(command_name: &str, output: Output) -> crate::Result<T> {
+pub fn commandline_error(command_name: &str, output: Output) -> color_eyre::Report {
     use color_eyre::eyre::eyre;
 
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    Err(eyre!(
+    eyre!(
         "command {} failed with exit code {}, stdout:\n'{}'\nstderr:\n'{}'",
         command_name,
         output.status.code().unwrap_or(1),
         stdout,
         stderr
-    ))
+    )
 }
 
 pub fn ffprobe(path: impl AsRef<Utf8Path>) -> Result<FfProbe> {
@@ -245,6 +245,21 @@ pub fn ffprobe(path: impl AsRef<Utf8Path>) -> Result<FfProbe> {
         info!("{}: {}", path.as_ref(), json.video_codec());
         Ok(json)
     } else {
-        commandline_error("ffprobe", output)
+        Err(commandline_error("ffprobe", output))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialization_and_deserialization() -> Result<()> {
+        let input_file = "samples/claire.mp4";
+        let ffprobe_output = ffprobe(input_file)?;
+        let serialized = serde_json::to_string(&ffprobe_output)?;
+        let deserialized: FfProbe = serde_json::from_str(&serialized)?;
+        assert_eq!(ffprobe_output, deserialized);
+        Ok(())
     }
 }

@@ -1,4 +1,3 @@
-use crate::{ffprobe::FfProbe, Result};
 use camino::Utf8PathBuf;
 use jiff::Timestamp;
 use r2d2::Pool;
@@ -7,6 +6,9 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::from_rows;
 use tracing::info;
+
+use crate::ffprobe::FfProbe;
+use crate::Result;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -27,7 +29,17 @@ pub struct TranscodeFile {
     pub updated_on: Timestamp,
     pub error_message: Option<String>,
     pub file_size: i64,
-    pub ffprobe_info: Option<FfProbe>,
+    pub ffprobe_info: Option<String>,
+}
+
+impl TranscodeFile {
+    pub fn ffprobe(&self) -> Option<FfProbe> {
+        if let Some(info) = &self.ffprobe_info {
+            serde_json::from_str(info).ok()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -83,9 +95,14 @@ impl Database {
     }
 
     pub fn list(&self) -> Result<Vec<TranscodeFile>> {
+        self.list_limit(None)
+    }
+
+    pub fn list_limit(&self, count: Option<i64>) -> Result<Vec<TranscodeFile>> {
         let connection = self.db.get()?;
-        let mut statement = connection.prepare("SELECT rowid, * FROM transcode_files")?;
-        let res = from_rows::<TranscodeFile>(statement.query([])?);
+        let mut statement = connection
+            .prepare("SELECT rowid, * FROM transcode_files ORDER BY file_size DESC LIMIT ?1")?;
+        let res = from_rows::<TranscodeFile>(statement.query([count.unwrap_or(i64::MAX)])?);
         let rows: Result<_, serde_rusqlite::Error> = res.collect();
         Ok(rows?)
     }
@@ -117,11 +134,28 @@ impl Database {
         )?;
         Ok(())
     }
+
+    pub fn set_file_status(
+        &self,
+        rowid: i64,
+        status: TranscodeStatus,
+        error_message: Option<String>,
+    ) -> Result<()> {
+        info!("Setting file status for rowid {} to {:?}", rowid, status);
+        let connection = self.db.get()?;
+        let now = Timestamp::now().as_second();
+        connection.execute(
+            "UPDATE transcode_files SET status = ?1, updated_on = ?2, error_message = ?3 WHERE rowid = ?4",
+            params![status as i32, now, error_message, rowid],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ffprobe::ffprobe;
 
     #[test]
     fn test_insert_row() -> Result<()> {
@@ -176,6 +210,23 @@ mod tests {
         assert!(error.is_err());
         let err = error.unwrap_err();
         assert!(err.to_string().contains("UNIQUE constraint failed"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ffprobe_info() -> Result<()> {
+        let db = Database::in_memory()?;
+        let file = NewTranscodeFile {
+            path: "./samples/claire.mp4".into(),
+            file_size: 130 * 1000 * 1000,
+        };
+        db.insert(file)?;
+        let ffprobe = ffprobe("./samples/claire.mp4")?;
+        db.set_ffprobe_info(1, &ffprobe)?;
+        let rows = db.list()?;
+        assert_eq!(1, rows.len());
+        assert!(rows[0].ffprobe_info.is_some());
 
         Ok(())
     }
