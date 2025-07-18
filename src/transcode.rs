@@ -14,13 +14,12 @@ use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use regex::Regex;
-use serde_json::Error;
 use tracing::{debug, info, warn};
 
 use crate::collect::VideoFile;
 use crate::database::{Database, TranscodeStatus};
 use crate::ffprobe::commandline_error;
-use crate::{Args, Result};
+use crate::Result;
 
 static OUT_TIME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"out_time_us=(\d+)").unwrap());
 
@@ -359,7 +358,7 @@ impl Transcoder {
             });
             total_progress.tick();
 
-            self.files.par_iter().enumerate().for_each(|(index, file)| {
+            self.files.par_iter().enumerate().for_each(|(_, file)| {
                 match self.transcode_file(file, &total_progress) {
                     Ok(_) => {}
                     Err(e) => {
