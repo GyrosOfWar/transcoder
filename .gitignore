@@ -2,3 +2,4 @@
 *.sqlite3
 /samples
 .DS_Store
+*.db

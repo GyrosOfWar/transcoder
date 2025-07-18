@@ -2,81 +2,83 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use camino::Utf8PathBuf;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use collect::{FileSortOrder, VideoFile};
 use human_repr::{HumanCount, HumanDuration};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::collect::Collector;
-use crate::transcode::Transcoder;
+use crate::database::Database;
+use crate::ffprobe::ffprobe;
+use crate::transcode::{GpuMode, Transcoder};
 
 mod collect;
+mod database;
 mod ffprobe;
 mod transcode;
 
-pub type Result<T> = std::result::Result<T, color_eyre::Report>;
+pub type Result<T, E = color_eyre::Report> = std::result::Result<T, E>;
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    Scan {
+        /// Exclude files that contain this string
+        #[clap(short = 'E', long)]
+        exclude: Vec<String>,
+        /// Minimum file size to transcode
+        #[clap(long)]
+        min_size: Option<String>,
+
+        /// The path to scan for video files
+        path: Utf8PathBuf,
+    },
+    Transcode {
+        /// CRF value to use for encoding
+        #[clap(short, long, default_value = "24")]
+        crf: u8,
+
+        /// Effort level to use for encoding
+        #[clap(short, long, default_value = "7")]
+        effort: u8,
+
+        /// Dry run, don't do anything
+        #[clap(short, long)]
+        dry_run: bool,
+
+        #[clap(short, long)]
+        replace: bool,
+
+        /// Sort order in which the files should be processed
+        #[clap(long)]
+        sort: Option<FileSortOrder>,
+
+        /// Use the GPU for transcoding
+        #[clap(long)]
+        gpu: Option<GpuMode>,
+
+        /// Number of files to process in parallel.
+        #[clap(short, long, default_value = "1")]
+        parallel: u32,
+
+        /// Limit how many files to process
+        #[clap(short, long)]
+        number: Option<usize>,
+    },
+    Info,
+}
 
 #[derive(Parser, Debug)]
 pub struct Args {
-    /// Exclude files that contain this string
-    #[clap(short = 'E', long)]
-    pub exclude: Vec<String>,
-
-    /// CRF value to use for encoding
-    #[clap(short, long, default_value = "24")]
-    pub crf: u8,
-
-    /// Effort level to use for encoding
-    #[clap(short, long, default_value = "7")]
-    pub effort: u8,
-
-    /// Dry run, don't do anything
-    #[clap(short, long)]
-    pub dry_run: bool,
-
-    /// Minimum file size to transcode
-    #[clap(long)]
-    pub min_size: Option<String>,
-
     /// Set the log level
     #[clap(short, long)]
     pub log: Option<tracing::level_filters::LevelFilter>,
 
-    /// Replace the original file with the transcoded one
-    #[clap(short, long)]
-    pub replace: bool,
-
-    /// Don't transcode, just print stats about the files at the location.
-    #[clap(long)]
-    pub stats: bool,
-
-    /// Use the GPU (nvenv) for transcoding
-    #[clap(long)]
-    pub gpu: bool,
-
-    /// Sort order in which the files should be processed
-    #[clap(long)]
-    pub sort: Option<FileSortOrder>,
-
-    /// Number of files to process in parallel.
-    #[clap(short, long)]
-    pub parallel: u32,
-
-    /// Limit how many files to process
-    #[clap(short, long)]
-    pub number: Option<usize>,
-
-    /// The path to scan for video files
-    pub path: Utf8PathBuf,
-}
-
-impl Args {
-    pub fn min_size(&self) -> Option<u64> {
-        self.min_size.as_ref().and_then(|s| parse_bytes(s))
-    }
+    #[clap(subcommand)]
+    pub command: Command,
 }
 
 fn parse_bytes(string: &str) -> Option<u64> {
@@ -125,32 +127,63 @@ fn main() -> Result<()> {
         env::set_var("RUST_LOG", level.to_string());
     }
 
+    let database = Database::new()?;
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
     color_eyre::install()?;
 
-    let collector = Collector::new(
-        args.path.clone(),
-        args.exclude.clone(),
-        args.min_size(),
-        args.sort,
-        args.number,
-    );
-    let files = collector.gather_files()?;
-    let files = collector.probe_files(files)?;
-
-    if args.stats {
-        print_stats(&files);
-        return Ok(());
+    match args.command {
+        Command::Scan {
+            exclude,
+            min_size,
+            path,
+        } => {
+            let min_size = min_size.as_deref().and_then(parse_bytes);
+            let collector = Collector::new(database.clone(), path, exclude, min_size);
+            collector.gather_files()?;
+            database.list()?.into_par_iter().try_for_each(|f| {
+                let info = ffprobe(&f.path)?;
+                database.set_ffprobe_info(f.rowid, &info)?;
+                Ok::<_, color_eyre::Report>(())
+            })?;
+        }
+        Command::Transcode {
+            crf,
+            effort,
+            dry_run,
+            replace,
+            sort,
+            gpu,
+            parallel,
+            number,
+        } => todo!(),
+        Command::Info => todo!(),
     }
 
-    let transcode_options = args.into();
-    let transcoder = Transcoder::new(transcode_options, files);
-    transcoder.transcode_all()?;
-    let duration = start.elapsed();
-    info!("total duration: {}", duration.human_duration());
+    // let collector = Collector::new(
+    //     database,
+    //     args.path.clone(),
+    //     args.exclude.clone(),
+    //     args.min_size(),
+    //     args.sort,
+    //     args.number,
+    // );
+    // let files = collector.gather_files()?;
+    // let files = collector.probe_files(files)?;
+
+    // if args.stats {
+    //     print_stats(&files);
+    //     return Ok(());
+    // }
+
+    // let transcode_options = args.into();
+    // let transcoder = Transcoder::new(transcode_options, files);
+    // transcoder.transcode_all()?;
+    // let duration = start.elapsed();
+    // info!("total duration: {}", duration.human_duration());
 
     Ok(())
 }

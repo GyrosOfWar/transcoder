@@ -4,6 +4,7 @@ use std::time::Duration;
 use std::{fmt, fs};
 
 use camino::Utf8Path;
+use clap::ValueEnum;
 use console::{Emoji, Term};
 use human_repr::HumanCount;
 use indicatif::{
@@ -21,6 +22,12 @@ use crate::{Args, Result};
 
 static OUT_TIME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"out_time_us=(\d+)").unwrap());
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum GpuMode {
+    Nvidia,
+    Qsv,
+}
+
 #[derive(Debug, Clone)]
 pub struct TranscodeOptions {
     pub crf: u8,
@@ -29,23 +36,8 @@ pub struct TranscodeOptions {
     pub replace: bool,
     pub progress_hidden: bool,
     pub ignored_codecs: Vec<String>,
-    pub gpu: bool,
+    pub gpu: Option<GpuMode>,
     pub parallel: u32,
-}
-
-impl From<Args> for TranscodeOptions {
-    fn from(args: Args) -> Self {
-        Self {
-            crf: args.crf,
-            effort: args.effort,
-            dry_run: args.dry_run,
-            replace: args.replace,
-            progress_hidden: args.log.is_some(),
-            ignored_codecs: vec!["av1".into(), "hevc".into()],
-            gpu: args.gpu,
-            parallel: args.parallel,
-        }
-    }
 }
 
 fn trim_path(path: &Utf8Path) -> String {
@@ -155,58 +147,81 @@ impl Transcoder {
             return Ok(());
         }
         let tmp_file = file.path.with_file_name(format!("{stem}_tmp.mp4"));
-        let effort = if self.options.gpu {
-            format!("p{}", self.options.effort)
-        } else {
-            self.options.effort.to_string()
+        let effort = match self.options.gpu {
+            Some(GpuMode::Nvidia) => format!("p{}", self.options.effort),
+            Some(GpuMode::Qsv) | None => self.options.effort.to_string(),
         };
         let crf = self.options.crf.to_string();
-        let args = if self.options.gpu {
-            vec![
-                "-y",
-                "-i",
-                file.path.as_str(),
-                "-c:v",
-                "av1_nvenc",
-                "-preset",
-                "p7",
-                "-tune",
-                "hq",
-                "-cq",
-                &crf,
-                "-rc-lookahead",
-                "24",
-                "-b_adapt",
-                "1",
-                "-temporal-aq",
-                "1",
-                "-spatial-aq",
-                "1",
-                "-c:a",
-                "copy",
-                "-progress",
-                "-",
-                "-nostats",
-                tmp_file.as_str(),
-            ]
-        } else {
-            vec![
-                "-y",
-                "-i",
-                file.path.as_str(),
-                "-c:v",
-                "libsvtav1",
-                "-preset",
-                &effort,
-                "-crf",
-                &crf,
-                "-c:a",
-                "copy",
-                "-progress",
-                "-",
-                "-nostats",
-                tmp_file.as_str(),
-            ]
+        let args = match self.options.gpu {
+            Some(GpuMode::Nvidia) => {
+                vec![
+                    "-y",
+                    "-i",
+                    file.path.as_str(),
+                    "-c:v",
+                    "av1_nvenc",
+                    "-preset",
+                    "p7",
+                    "-tune",
+                    "hq",
+                    "-cq",
+                    &crf,
+                    "-rc-lookahead",
+                    "24",
+                    "-b_adapt",
+                    "1",
+                    "-temporal-aq",
+                    "1",
+                    "-spatial-aq",
+                    "1",
+                    "-c:a",
+                    "copy",
+                    "-progress",
+                    "-",
+                    "-nostats",
+                    tmp_file.as_str(),
+                ]
+            }
+            Some(GpuMode::Qsv) => {
+                vec![
+                    "-hwaccel",
+                    "qsv",
+                    "-y",
+                    "-i",
+                    file.path.as_str(),
+                    "-c:v",
+                    "av1_qsv",
+                    "-preset",
+                    &effort,
+                    "-crf",
+                    &crf,
+                    "-c:a",
+                    "copy",
+                    "-progress",
+                    "-",
+                    "-nostats",
+                    tmp_file.as_str(),
+                ]
+            }
+            None => {
+                vec![
+                    "-y",
+                    "-i",
+                    file.path.as_str(),
+                    "-c:v",
+                    "libsvtav1",
+                    "-preset",
+                    &effort,
+                    "-crf",
+                    &crf,
+                    "-c:a",
+                    "copy",
+                    "-progress",
+                    "-",
+                    "-nostats",
+                    tmp_file.as_str(),
+                ]
+            }
         };
         if self.options.dry_run {
             let args: Vec<_> = args

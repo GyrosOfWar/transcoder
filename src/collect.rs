@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -8,6 +7,7 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
 
+use crate::database::{Database, NewTranscodeFile};
 use crate::ffprobe::ffprobe;
 use crate::Result;
 
@@ -24,7 +24,6 @@ pub struct VideoFile {
 }
 
 impl VideoFile {
-    #[allow(unused)]
     pub fn difficulty(&self) -> u64 {
         let (width, height) = self.resolution;
         (width * height) as u64 * self.duration as u64 * self.bitrate * self.frame_rate as u64
@@ -39,27 +38,25 @@ pub enum FileSortOrder {
 }
 
 pub struct Collector {
+    database: Database,
+
     exclude: Vec<String>,
     base_path: Utf8PathBuf,
     min_size: Option<u64>,
-    order: Option<FileSortOrder>,
-    count: Option<usize>,
 }
 
 impl Collector {
     pub fn new(
+        database: Database,
         base_path: Utf8PathBuf,
         exclude: Vec<String>,
         min_size: Option<u64>,
-        order: Option<FileSortOrder>,
-        count: Option<usize>,
     ) -> Self {
         Self {
+            database,
             exclude,
             base_path,
             min_size,
-            order,
-            count,
         }
     }
 
@@ -134,17 +131,15 @@ impl Collector {
         files.retain(|(_, ffprobe, _)| !excluded_codecs.contains(&ffprobe.video_codec()));
 
         info!("gathered {} files", files.len());
-        if let Some(order) = self.order {
-            match order {
-                FileSortOrder::BiggestFirst => {
-                    files.sort_by_key(|(_, _, size)| Reverse(*size));
-                }
-            }
-        }
 
-        if let Some(count) = self.count {
-            files.truncate(count);
-        }
+        let records: Vec<_> = files
+            .iter()
+            .map(|f| NewTranscodeFile {
+                file_size: f.2,
+                path: f.0.clone(),
+            })
+            .collect();
+        self.database.insert_batch(&records)?;
 
         Ok(files.into_iter().map(|f| f.0).collect())
     }

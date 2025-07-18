@@ -1,12 +1,12 @@
 use std::process::{Command, Output};
 
 use camino::Utf8Path;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::Result;
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct FfProbe {
     pub streams: Vec<Stream>,
     pub format: Format,
@@ -66,7 +66,7 @@ impl FfProbe {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Stream {
     pub index: i64,
     pub codec_name: Option<String>,
@@ -142,12 +142,12 @@ impl Stream {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SideData {
     pub side_data_type: String,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Disposition {
     pub default: i64,
     pub dub: i64,
@@ -163,7 +163,7 @@ pub struct Disposition {
     pub timed_thumbnails: i64,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct StreamTags {
     pub language: Option<String>,
     pub creation_time: Option<String>,
@@ -171,7 +171,7 @@ pub struct StreamTags {
     pub encoder: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Format {
     pub filename: String,
     pub nb_streams: i64,
@@ -195,7 +195,7 @@ impl Format {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct FormatTags {
     #[serde(rename = "WMFSDKNeeded")]
     pub wmfsdkneeded: Option<String>,
