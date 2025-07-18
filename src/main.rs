@@ -128,20 +128,16 @@ fn print_stats(files: &[VideoFile]) {
 }
 
 fn main() -> Result<()> {
-    use std::env;
-
     let start = Instant::now();
     let args = Args::parse();
-
-    if let Some(level) = args.log {
-        env::set_var("RUST_LOG", level.to_string());
-    }
-
     let database = Database::new()?;
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(EnvFilter::from_default_env())
+        .with(EnvFilter::new(match args.log {
+            Some(level) => level.to_string(),
+            None => "off".to_string(),
+        }))
         .init();
     color_eyre::install()?;
 

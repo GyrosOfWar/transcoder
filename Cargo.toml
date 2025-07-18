@@ -1,7 +1,7 @@
 [package]
 name = "transcoder"
 version = "0.1.2"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/GyrosOfWar/transcoder"
 
 [dependencies]
