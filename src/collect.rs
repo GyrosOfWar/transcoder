@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::time::Duration;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -10,6 +11,15 @@ use walkdir::{DirEntry, WalkDir};
 use crate::database::{Database, NewTranscodeFile, TranscodeFile};
 use crate::ffprobe::ffprobe;
 use crate::Result;
+
+fn file_name_short(path: &Utf8Path, len: usize) -> Cow<'_, str> {
+    let name = path.file_name().unwrap_or_default();
+    if name.len() > len {
+        Cow::Owned(name.chars().take(len - 1).collect::<String>() + "...")
+    } else {
+        Cow::Borrowed(name)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct VideoFile {
@@ -141,10 +151,7 @@ impl Collector {
             .into_par_iter()
             .flat_map(|(path, size)| ffprobe(&path).map(|ffprobe| (path, ffprobe, size)))
             .inspect(|p| {
-                let mut name = p.0.file_name().unwrap_or_default();
-                if name.len() > 40 {
-                    name = &name[..40];
-                }
+                let name = file_name_short(&p.0, 40);
                 progress.set_message(format!("Processing {:40}", name));
                 progress.inc(1);
             })
