@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "transcoder"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "camino",
  "clap",
