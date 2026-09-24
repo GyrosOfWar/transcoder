@@ -105,20 +105,19 @@ impl Collector {
                 Ok(entry) => {
                     if entry.file_type().is_file() {
                         let path = Utf8Path::from_path(entry.path()).expect("path must be utf-8");
-                        if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension()) {
-                            if EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
+                        if let (Some(stem), Some(ext)) = (path.file_stem(), path.extension())
+                            && EXTENSIONS.contains(&ext) && !stem.ends_with("_tmp") {
                                 match path.metadata() {
                                     Ok(metadata) => {
                                         let size = metadata.len();
-                                        if let Some(min_size) = self.min_size {
-                                            if size <= min_size {
+                                        if let Some(min_size) = self.min_size
+                                            && size <= min_size {
                                                 debug!(
                                                     "skipping file {} because it is too small",
                                                     path
                                                 );
                                                 continue;
                                             }
-                                        }
                                         info!("found video file: {path}");
 
                                         files.push((path.to_owned(), size));
@@ -128,7 +127,6 @@ impl Collector {
                                     }
                                 }
                             }
-                        }
                     }
                 }
                 Err(e) => warn!("error while walking directory: {}", e),
